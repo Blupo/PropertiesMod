@@ -1,0 +1,1 @@
+This repo is a Rojo project, and trying to build the plugin without it will result in an error. Plugin builds can be found in the Releases.
