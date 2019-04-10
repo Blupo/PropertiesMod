@@ -1,0 +1,6 @@
+[submodule "includes/TableLayout"]
+	path = includes/TableLayout
+	url = https://github.com/blupo/TableLayout
+[submodule "includes/RobloxAPI"]
+	path = includes/RobloxAPI
+	url = https://github.com/blupo/RobloxAPI
