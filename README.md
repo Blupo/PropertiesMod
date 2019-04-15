@@ -1,1 +1,1 @@
-This repo is a Rojo project, and trying to build the plugin without it will result in an error. Plugin builds can be found in the Releases.
+This repo is a [Rojo](https://github.com/LPGhatguy/rojo) project, and you should not be building the plugin from it. Plugin builds can be found in the [releases](https://github.com/blupo/PropertiesMod/releases).

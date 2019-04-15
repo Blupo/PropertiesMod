@@ -8,7 +8,7 @@ if RunService:IsRunMode() then warn("PropertiesMod only works in Edit mode") ret
 local root = script.Parent
 local includes = root:WaitForChild("includes")
 
-local API = require(includes:WaitForChild("RobloxAPI"):WaitForChild("API"))
+local RobloxAPI = require(includes:WaitForChild("RobloxAPI"):WaitForChild("API"))
 local TableLayout = require(includes:WaitForChild("TableLayout"):WaitForChild("TableLayout"))
 
 local PROPERTY_NAME_ROW_HEIGHT = 26
@@ -84,10 +84,10 @@ local widgetInfo = {
 local toolbar = plugin:CreateToolbar("PropertiesMod")
 local configButton = toolbar:CreateButton("Settings", "Configure PropertiesMod and its editors", "")
 
-local StudioAPI = API.new()
-local APIData = StudioAPI.Data
-local APILib = StudioAPI.Library
-local APIOperator = StudioAPI.Operator
+local API = RobloxAPI.new()
+local APIData = API.Data
+local APILib = API.Library
+local APIOperator = API.Operator
 
 APIData:RemoveInaccessibleMembers()
 APIData:RemoveDeprecatedMembers()
