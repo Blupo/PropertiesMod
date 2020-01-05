@@ -1,4 +1,5 @@
 -- TODO: Fix bugs with toggling categories
+-- TODO: Scrollbars
 
 local RunService = game:GetService("RunService")
 
@@ -32,8 +33,7 @@ local HttpService = game:GetService("HttpService")
 -- https://devforum.roblox.com/t/weird-selectionchanged-behavior/22024/2
 -- Credit to Fractality
 
-local SelectionChanged
-do
+local SelectionChanged do
 	local selectionChanged = Instance.new("BindableEvent")
 	local d0, d1 = true, true
 	
@@ -75,9 +75,12 @@ end
 local pluginSettings = --[[plugin:GetSetting("PropertiesMod") and HttpService:JSONDecode(plugin:GetSetting("PropertiesMod")) or--]] {
 	Config = {
 		Verbose = false,
-		DisableOpenWikiPages = false,
-		PreloadAllClasses = false,
-		PreloadCommonClasses = true,
+
+		ShowInaccessibleProperties = true,
+		ShowDeprecatedProperties = false,
+
+		PreloadClasses = "Common",
+		-- Common, All, or None
 	},
 	
 	FilterPreferences = {},
@@ -93,6 +96,8 @@ local categoryContainers = {}
 local nameColumnWidth = 0
 local editorColumnWidth = 0
 
+local shownRestrictedInstancesWarning = false
+
 local widgetInfo = {
 	WIDGET_ID = "PropertiesMod",
 	WIDGET_DEFAULT_TITLE = "Properties",
@@ -107,8 +112,13 @@ local APIData = API.Data
 local APILib = API.Library
 local APIOperator = API.Operator
 
-APIData:RemoveInaccessibleMembers()
-APIData:RemoveDeprecatedMembers()
+if (not pluginSettings.Config.ShowInaccessibleProperties) then
+	APIData:RemoveInaccessibleMembers()
+end
+
+if (not pluginSettings.Config.ShowDeprecatedProperties) then
+	APIData:RemoveDeprecatedMembers()
+end
 
 local function getEditor(class, property)
 	-- Property > Data Type
@@ -247,6 +257,12 @@ propertiesListUIListLayout.SortOrder = Enum.SortOrder.Name
 propertiesListUIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 propertiesListUIListLayout.Padding = UDim.new(0, 0)
 
+local function propertyIsInaccessible(className, propertyName)
+	local property = APIData.Classes[className].Properties[propertyName]
+
+	return (property.Security.Read == "RobloxSecurity") or (property.Security.Read == "RobloxScriptSecurity") or (property.Tags.NotScriptable)
+end
+
 local function getPropertyNormalName(className, propertyName)
 	return className .. "/" .. propertyName
 end
@@ -283,6 +299,7 @@ local function newPropertyRow(className, propertyName)
 	-- populate
 
 	local isReadOnly = APILib:IsPropertyReadOnly(className, propertyName)
+	local isInaccessible = propertyIsInaccessible(className, propertyName)
 
 	local propertyNameLabel = Instance.new("TextButton")
 	propertyNameLabel.AnchorPoint = Vector2.new(0, 0.5)
@@ -298,6 +315,12 @@ local function newPropertyRow(className, propertyName)
 	propertyNameLabel.TextXAlignment = Enum.TextXAlignment.Left
 	propertyNameLabel.TextYAlignment = Enum.TextYAlignment.Center
 	propertyNameLabel.Text = propertyName
+
+	if isInaccessible then
+		propertyNameLabel.TextColor3 = Color3.fromRGB(100, 80, 80)
+	else
+		propertyNameLabel.TextColor3 = (not isReadOnly) and Color3.new(1, 1, 1) or Color3.fromRGB(85, 85, 85)
+	end
 	
 	propertyNameLabel.MouseButton2Click:Connect(function()
 		local rmbMenu = plugin:CreatePluginMenu("PropertiesMod")
@@ -310,10 +333,14 @@ local function newPropertyRow(className, propertyName)
 	end)
 	
 	propertyNameCell.MouseEnter:Connect(function()
+		if (isReadOnly or isInaccessible) then return end
+
 		propertyNameCell.BackgroundColor3 = Color3.fromRGB(66, 66, 66)
 	end)
 	
 	propertyNameCell.MouseLeave:Connect(function()
+		if (isReadOnly or isInaccessible) then return end
+
 		propertyNameCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 	end)
 	
@@ -436,14 +463,6 @@ local function createCategoryContainer(categoryName)
 	headerText.TextXAlignment = Enum.TextXAlignment.Left
 	headerText.TextYAlignment = Enum.TextYAlignment.Center
 	headerText.Text = categoryName
-	
-	--[[
-	propertiesTable:SetStyleCallback(function(cell)
-		cell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
-	--	cell.BorderColor3 = Color3.fromRGB(34, 34, 34)	
-		cell.BorderSizePixel = 0
-	end)
-	--]]
 	
 	local propertiesTableUI = Instance.new("Frame")
 	propertiesTableUI.Name = "PropertiesList"
@@ -608,9 +627,24 @@ local function refreshPropertiesList(selection)
 	for i = 1, #selection do
 		local obj = selection[i]
 		
-		selectionClasses[#selectionClasses + 1] = obj.ClassName
+		local success = pcall(function()
+			if (obj.ClassName == "") then return end
+			-- Idk why there are things with no ClassName, but they exist
+
+			selectionClasses[#selectionClasses + 1] = obj.ClassName
+		end)
 	end
 	purgeDuplicates(selectionClasses)
+
+	for _, category in pairs(categoryContainers) do
+		category.UI.Visible = false
+	end
+
+	for _, tableRow in pairs(tableRows) do
+		tableRow.Visible = false
+	end
+
+	if (#selectionClasses <= 0) then return end
 	
 	for i = 1, #selectionClasses do
 		local class = selectionClasses[i]
@@ -625,14 +659,6 @@ local function refreshPropertiesList(selection)
 		end
 	end
 	purgeDuplicates(selectionProperties)
-	
-	for _, category in pairs(categoryContainers) do
-		category.UI.Visible = false
-	end
-
-	for _, tableRow in pairs(tableRows) do
-		tableRow.Visible = false
-	end
 	
 	local categoriesWithNewRows = {}
 	for i = 1, #selectionProperties do
@@ -720,9 +746,9 @@ end)
 do
 	local classes
 
-	if pluginSettings.Config.PreloadAllClasses then
+	if (pluginSettings.Config.PreloadClasses == "All") then
 		classes = APIData.Classes
-	elseif pluginSettings.Config.PreloadCommonClasses then
+	elseif (pluginSettings.Config.PreloadClasses == "Common") then
 		classes = require(includes:WaitForChild("CommonClasses"))
 	end
 
