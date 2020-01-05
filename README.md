@@ -1,1 +1,5 @@
-This repo is a [Rojo](https://github.com/LPGhatguy/rojo) project, and you should not be building the plugin from it. Plugin builds can be found in the [releases](https://github.com/blupo/PropertiesMod/releases).
+# PropertiesMod
+
+PropertiesMod is a replacement for the default Studio Properties widget that is more customisable and allows for new ways to edit properties.
+
+TBA
