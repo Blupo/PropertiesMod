@@ -1,7 +1,7 @@
 local RunService = game:GetService("RunService")
 
-if (not RunService:IsStudio()) then warn("PropertiesMod only works in Studio") return end
-if RunService:IsRunMode() then warn("PropertiesMod only works in Edit mode") return end
+if (not RunService:IsStudio()) then warn("PropertiesMod only works in Studio") return false end
+if RunService:IsRunMode() then warn("PropertiesMod only works in Edit mode") return false end
 
 ---
 
@@ -11,16 +11,18 @@ local includes = root:WaitForChild("includes")
 local RobloxAPI = require(includes:WaitForChild("RobloxAPI"):WaitForChild("API"))
 local TableLayout = require(includes:WaitForChild("TableLayout"):WaitForChild("TableLayout"))
 
+local SECTION_HEADER_HEIGHT = 26
 local PROPERTY_NAME_ROW_HEIGHT = 26
 local PROPERTY_EDITOR_COLUMN_WIDTH = 150
-local PROPNAME_TEXTSIZE = 14
-local PROPNAME_FONT = Enum.Font.SourceSans
+local TEXT_TEXTSIZE = 14
+local TEXT_FONT = Enum.Font.SourceSans
 
 ---
 
 local Selection = game:GetService("Selection")
 local TextService = game:GetService("TextService")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
 ---
 
@@ -68,8 +70,22 @@ end
 
 ---
 
+local pluginSettings = --[[plugin:GetSetting("PropertiesMod") and HttpService:JSONDecode(plugin:GetSetting("PropertiesMod")) or--]] {
+	Config = {
+		Verbose = false,
+		DisableOpenWikiPages = false,
+		PreloadAllClasses = false,
+		PreloadCommonClasses = true,
+	},
+	
+	FilterPreferences = {},
+	PropertyCategoryOverrides = {},
+	CategoryStateMemory = {},
+}
+
 local editors = {}
 local editorFilters = {}
+local editorPreferences = {}
 
 local categoryContainers = {}
 local nameColumnWidth = 0
@@ -82,9 +98,9 @@ local widgetInfo = {
 }
 
 local toolbar = plugin:CreateToolbar("PropertiesMod")
-local configButton = toolbar:CreateButton("Settings", "Configure PropertiesMod and its editors", "")
+local configButton = toolbar:CreateButton("Settings", "Configure PropertiesMod and its editors (uses a viewport UI)", "")
 
-local API = RobloxAPI.new()
+local API = RobloxAPI.new(true)
 local APIData = API.Data
 local APILib = API.Library
 local APIOperator = API.Operator
@@ -93,6 +109,8 @@ APIData:RemoveInaccessibleMembers()
 APIData:RemoveDeprecatedMembers()
 
 local function getEditor(class, property)
+	-- Property > Data Type
+	
 	if editorFilters[class.."."..property] then
 		return editorFilters[class.."."..property]
 	else
@@ -212,7 +230,215 @@ propertiesListUIListLayout.SortOrder = Enum.SortOrder.Name
 propertiesListUIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 propertiesListUIListLayout.Padding = UDim.new(0, 0)
 
-local function newCategoryContainer(catName)
+local function populatePropertyRow(propertiesTable, className, propertyName)
+	local cell = propertiesTable:Get(className.."."..propertyName..":PropertyName")
+	
+	local isReadOnly = APILib:IsPropertyReadOnly(className, propertyName)
+
+	local propertyNameLabel = Instance.new("TextButton")
+	propertyNameLabel.AnchorPoint = Vector2.new(0, 0.5)
+	propertyNameLabel.Size = UDim2.new(1, -24, 1, 0)
+	propertyNameLabel.Position = UDim2.new(0, 24, 0.5, 0)
+	propertyNameLabel.Active = true
+	propertyNameLabel.BackgroundTransparency = 1
+	propertyNameLabel.BorderSizePixel = 0
+	propertyNameLabel.AutoButtonColor = false
+	propertyNameLabel.TextColor3 = (not isReadOnly) and Color3.new(1, 1, 1) or Color3.fromRGB(85, 85, 85)
+	propertyNameLabel.Font = Enum.Font.SourceSans
+	propertyNameLabel.TextSize = 14
+	propertyNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	propertyNameLabel.TextYAlignment = Enum.TextYAlignment.Center
+	propertyNameLabel.Text = propertyName
+	
+	propertyNameLabel.MouseButton2Click:Connect(function()
+		local rmbMenu = plugin:CreatePluginMenu("PropertiesMod")
+		rmbMenu:AddNewAction("ViewOnDevHub", "View on DevHub").Triggered:Connect(function()
+			plugin:OpenWikiPage("api-reference/property/" .. className .. "/" .. propertyName)
+		end)
+		
+		rmbMenu:ShowAsync()
+		rmbMenu:Destroy()
+	end)
+	
+	cell.MouseEnter:Connect(function()
+		cell.BackgroundColor3 = Color3.fromRGB(66, 66, 66)
+	end)
+	
+	cell.MouseLeave:Connect(function()
+		cell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+	end)
+	
+	propertyNameLabel.Parent = cell
+end
+
+--[[
+-- why is this here
+local function collapsibleSection(sectionName, sizeCallback)
+	local isToggled = true
+	
+	local sectionFrame = Instance.new("Frame")
+	sectionFrame.BackgroundTransparency = 1
+	
+	local header = Instance.new("Frame")
+	header.Name = "Header"
+	header.AnchorPoint = Vector2.new(0.5, 0)
+	header.Size = UDim2.new(1, 0, 0, SECTION_HEADER_HEIGHT)
+	header.Position = UDim2.new(0.5, 0, 0, 0)
+	header.BackgroundColor3 = Color3.fromRGB(53, 53, 53)
+	header.BorderSizePixel = 0
+	
+	local headerToggle = Instance.new("TextButton")
+	headerToggle.Name = "Toggle"
+	headerToggle.AnchorPoint = Vector2.new(0, 0.5)
+	headerToggle.Size = UDim2.new(0, 24, 0, 24)
+	headerToggle.Position = UDim2.new(0, 0, 0.5, 0)
+	headerToggle.BackgroundTransparency = 1
+	headerToggle.Font = Enum.Font.SourceSansBold
+	headerToggle.TextSize = TEXT_TEXTSIZE
+	headerToggle.TextColor3 = Color3.new(1, 1, 1)
+	headerToggle.TextXAlignment = Enum.TextXAlignment.Center
+	headerToggle.TextYAlignment = Enum.TextYAlignment.Center
+	headerToggle.Text = "-"
+	
+	local headerText = Instance.new("TextLabel")
+	headerText.Name = "HeaderText"
+	headerText.AnchorPoint = Vector2.new(1, 0.5)
+	headerText.Size = UDim2.new(1, -24, 1, 0)
+	headerText.Position = UDim2.new(1, 0, 0.5, 0)
+	headerText.BackgroundTransparency = 1
+	headerText.Font = Enum.Font.SourceSansBold
+	headerText.TextSize = TEXT_TEXTSIZE
+	headerText.TextColor3 = Color3.new(1, 1, 1)
+	headerText.TextXAlignment = Enum.TextXAlignment.Left
+	headerText.TextYAlignment = Enum.TextYAlignment.Center
+	headerText.Text = sectionName
+	
+	local content = Instance.new("Frame")
+	content.Name = "Content"
+	content.AnchorPoint = Vector2.new(0.5, 1)
+	content.Size = UDim2.new(1, 0, 0, -SECTION_HEADER_HEIGHT)
+	content.Position = UDim2.new(0.5, 0, 1, 0)
+	
+	headerToggle.MouseButton1Click:Connect(function()
+		isToggled = (not isToggled)
+		
+		headerToggle.Text = isToggled and "-" or "+"
+		content.Visible = isToggled
+		sectionFrame.Size = isToggled and sizeCallback(sectionFrame) or UDim2.new(1, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
+	end)
+	
+	return sectionFrame
+end
+--]]
+
+local function createCategoryContainer(categoryName)
+	if (categoryContainers[categoryName]) then return categoryContainers[categoryName] end
+	
+	local isToggled do
+		if pluginSettings.CategoryStateMemory[categoryName] then
+			isToggled = pluginSettings.CategoryStateMemory[categoryName]
+		else
+			isToggled = true
+		end
+	end
+	
+	local categoryFrame = Instance.new("Frame")
+	categoryFrame.Name = categoryName
+	categoryFrame.BackgroundTransparency = 1
+	
+	local header = Instance.new("Frame")
+	header.Name = "Header"
+	header.AnchorPoint = Vector2.new(0.5, 0)
+	header.Size = UDim2.new(1, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
+	header.Position = UDim2.new(0.5, 0, 0, 0)
+	header.BackgroundColor3 = Color3.fromRGB(53, 53, 53)
+	header.BorderSizePixel = 0
+	
+	-- todo: make this an ImageButton
+	local headerToggle = Instance.new("TextButton")
+	headerToggle.Name = "Toggle"
+	headerToggle.AnchorPoint = Vector2.new(0, 0.5)
+	headerToggle.Size = UDim2.new(0, 24, 0, 24)
+	headerToggle.Position = UDim2.new(0, 0, 0.5, 0)
+	headerToggle.BackgroundTransparency = 1
+	headerToggle.Font = Enum.Font.SourceSansBold
+	headerToggle.TextSize = TEXT_TEXTSIZE
+	headerToggle.TextColor3 = Color3.new(1, 1, 1)
+	headerToggle.TextXAlignment = Enum.TextXAlignment.Center
+	headerToggle.TextYAlignment = Enum.TextYAlignment.Center
+	headerToggle.Text = "-"
+	
+	local headerText = Instance.new("TextLabel")
+	headerText.Name = "HeaderText"
+	headerText.AnchorPoint = Vector2.new(1, 0.5)
+	headerText.Size = UDim2.new(1, -24, 1, 0)
+	headerText.Position = UDim2.new(1, 0, 0.5, 0)
+	headerText.BackgroundTransparency = 1
+	headerText.Font = Enum.Font.SourceSansBold
+	headerText.TextSize = TEXT_TEXTSIZE
+	headerText.TextColor3 = Color3.new(1, 1, 1)
+	headerText.TextXAlignment = Enum.TextXAlignment.Left
+	headerText.TextYAlignment = Enum.TextYAlignment.Center
+	headerText.Text = categoryName
+	
+	local propertiesTable = TableLayout.new({
+		Columns = { "PropertyName", "Editor" },
+		Sizes = {
+			Rows = {
+				[":DEFAULT"] = PROPERTY_NAME_ROW_HEIGHT,
+			},
+			Columns = {
+				["Editor"] = PROPERTY_EDITOR_COLUMN_WIDTH,
+			}
+		}
+	})
+	
+	propertiesTable:SetStyleCallback(function(cell)
+		cell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+	--	cell.BorderColor3 = Color3.fromRGB(34, 34, 34)	
+		cell.BorderSizePixel = 0
+	end)
+	
+	local propertiesTableUI = propertiesTable.UIRoot
+	propertiesTableUI.Name = "PropertiesList"
+	propertiesTableUI.AnchorPoint = Vector2.new(0.5, 1)
+	propertiesTableUI.Position = UDim2.new(0.5, 0, 1, 0)
+	propertiesTableUI.BackgroundTransparency = 1
+	propertiesTableUI.BorderSizePixel = 0
+	propertiesTableUI.Visible = isToggled
+	
+	headerToggle.MouseButton1Click:Connect(function()
+		isToggled = (not isToggled)
+		local tableSize = propertiesTable:GetSize()
+		
+		headerToggle.Text = isToggled and "-" or "+"
+		propertiesTableUI.Visible = isToggled
+		categoryFrame.Size = isToggled and UDim2.new(0, tableSize.X, 0, tableSize.Y + PROPERTY_NAME_ROW_HEIGHT) or UDim2.new(0, 0, 0, 0)
+	end)
+	
+	propertiesTableUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		if (not isToggled) then return end
+		local tableSize = propertiesTable:GetSize()
+		
+		categoryFrame.Size = UDim2.new(0, tableSize.X, 0, tableSize.Y + PROPERTY_NAME_ROW_HEIGHT)
+	end)
+	
+	headerToggle.Parent = header
+	headerText.Parent = header
+	header.Parent = categoryFrame
+	propertiesTableUI.Parent = categoryFrame
+	categoryFrame.Parent = propertiesListScrollingFrame
+	
+	categoryContainers[categoryName] = {
+		UI = categoryFrame,
+		Table = propertiesTable
+	}
+	
+	return categoryContainers[categoryName]
+end
+
+--[[
+local function createCategoryContainer(catName)
 	if (categoryContainers[catName]) then return categoryContainers[catName] end
 	
 	local isToggled = true
@@ -236,7 +462,7 @@ local function newCategoryContainer(catName)
 	headerToggle.Position = UDim2.new(0, 0, 0.5, 0)
 	headerToggle.BackgroundTransparency = 1
 	headerToggle.Font = Enum.Font.SourceSansBold
-	headerToggle.TextSize = PROPNAME_TEXTSIZE
+	headerToggle.TextSize = TEXT_TEXTSIZE
 	headerToggle.TextColor3 = Color3.new(1, 1, 1)
 	headerToggle.TextXAlignment = Enum.TextXAlignment.Center
 	headerToggle.TextYAlignment = Enum.TextYAlignment.Center
@@ -249,18 +475,17 @@ local function newCategoryContainer(catName)
 	headerText.Position = UDim2.new(1, 0, 0.5, 0)
 	headerText.BackgroundTransparency = 1
 	headerText.Font = Enum.Font.SourceSansBold
-	headerText.TextSize = PROPNAME_TEXTSIZE
+	headerText.TextSize = TEXT_TEXTSIZE
 	headerText.TextColor3 = Color3.new(1, 1, 1)
 	headerText.TextXAlignment = Enum.TextXAlignment.Left
 	headerText.TextYAlignment = Enum.TextYAlignment.Center
 	headerText.Text = catName
 	
 	local propertiesTable = TableLayout.new({
-		DefaultVisibility = false,
 		Columns = { "PropertyName", "Editor" },
 		Sizes = {
 			Rows = {
-				[":default"] = PROPERTY_NAME_ROW_HEIGHT,
+				[":DEFAULT"] = PROPERTY_NAME_ROW_HEIGHT,
 			},
 			Columns = {
 				["Editor"] = PROPERTY_EDITOR_COLUMN_WIDTH,
@@ -310,6 +535,7 @@ local function newCategoryContainer(catName)
 	
 	return categoryContainers[catName]
 end
+--]]
 
 propertiesListUIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	local contentSize = propertiesListUIListLayout.AbsoluteContentSize
@@ -319,13 +545,12 @@ end)
 
 ---
 
-local selectionConnection
-selectionConnection = SelectionChanged:Connect(function()
+local function refreshPropertiesList(selection)
 	nameColumnWidth = 0
 	editorColumnWidth = 0
 	propertiesListScrollingFrame.CanvasPosition = Vector2.new(0, 0)
 	
-	local selection = Selection:Get()
+	selection = selection or Selection:Get()
 	
 	local selectionClasses = {}
 	local selectionProperties = {}
@@ -370,7 +595,7 @@ selectionConnection = SelectionChanged:Connect(function()
 		local propertiesTable
 		
 		if (not categoryContainers[propertyCategory]) then
-			categoryContainer = newCategoryContainer(propertyCategory)
+			categoryContainer = createCategoryContainer(propertyCategory)
 		else
 			categoryContainer = categoryContainers[propertyCategory]
 		end
@@ -380,25 +605,7 @@ selectionConnection = SelectionChanged:Connect(function()
 		
 		if (not propertiesTable:Get(property..":")) then
 			propertiesTable:AddRow(property)
-			
-			local cell = propertiesTable:Get(property..":PropertyName")
-			do
-				local isReadOnly = APILib:IsPropertyReadOnly(className, propertyName)
-				
-				local propertyNameLabel = Instance.new("TextLabel")
-				propertyNameLabel.AnchorPoint = Vector2.new(0, 0.5)
-				propertyNameLabel.Size = UDim2.new(1, -24, 1, 0)
-				propertyNameLabel.Position = UDim2.new(0, 24, 0.5, 0)
-				propertyNameLabel.BackgroundTransparency = 1
-				propertyNameLabel.TextColor3 = (not isReadOnly) and Color3.new(1, 1, 1) or Color3.fromRGB(85, 85, 85)
-				propertyNameLabel.Font = Enum.Font.SourceSans
-				propertyNameLabel.TextSize = 14
-				propertyNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-				propertyNameLabel.TextYAlignment = Enum.TextYAlignment.Center
-				propertyNameLabel.Text = propertyName
-				
-				propertyNameLabel.Parent = cell
-			end
+			populatePropertyRow(propertiesTable, className, propertyName)
 			
 			propertiesTable:SortRows(function(a, b)
 				local _, propertyNameA = string.match(a, "(.+)%.(.+)")
@@ -410,7 +617,7 @@ selectionConnection = SelectionChanged:Connect(function()
 			propertiesTable:SetVisible(property..":", true)
 		end
 		
-		local textWidth = TextService:GetTextSize(propertyName, PROPNAME_TEXTSIZE, PROPNAME_FONT, Vector2.new()).X
+		local textWidth = TextService:GetTextSize(propertyName, TEXT_TEXTSIZE, TEXT_FONT, Vector2.new()).X
 		if (textWidth > nameColumnWidth) then nameColumnWidth = textWidth end
 	end
 	
@@ -422,7 +629,10 @@ selectionConnection = SelectionChanged:Connect(function()
 		categoryTable:SetColumnWidth("PropertyName", nameColumnWidth + 24 + 10)
 		categoryTable:SetColumnWidth("Editor", editorColumnWidth)
 	end
-end)
+end
+
+local selectionConnection
+selectionConnection = SelectionChanged:Connect(refreshPropertiesList)
 
 widget:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 	editorColumnWidth = math.max(150, propertiesListScrollingFrame.AbsoluteSize.X - (nameColumnWidth + 24 + 10))
@@ -437,7 +647,71 @@ widget:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 	end
 end)
 
---- SETTINGS
+--- PRELOAD
+
+if pluginSettings.Config.PreloadAllClasses then
+	for class in pairs(APIData.Classes) do
+		local properties = APILib:GetImmediateProperties(class)
+		
+		for _, property in pairs(properties) do
+			local propertyCategory = APIData.Classes[class].Properties[property].Category
+			local categoryContainer
+			local propertiesTable
+			
+			if (not categoryContainers[propertyCategory]) then
+				categoryContainer = createCategoryContainer(propertyCategory)
+			else
+				categoryContainer = categoryContainers[propertyCategory]
+			end
+			propertiesTable = categoryContainer.Table
+			categoryContainer.UI.Visible = false
+			
+			propertiesTable:AddRow(class.."."..property)
+			propertiesTable:SetVisible(class.."."..property..":", false)
+			populatePropertyRow(propertiesTable, class, property)
+			
+			propertiesTable:SortRows(function(a, b)
+				local _, propertyNameA = string.match(a, "(.+)%.(.+)")
+				local _, propertyNameB = string.match(b, "(.+)%.(.+)")
+				
+				return propertyNameA < propertyNameB
+			end)
+		end
+	end
+elseif pluginSettings.Config.PreloadCommonClasses then
+	local commonClasses = require(includes:WaitForChild("CommonClasses"))
+	
+	for _, class in pairs(commonClasses) do
+		local properties = APILib:GetImmediateProperties(class)
+		
+		for _, property in pairs(properties) do
+			local propertyCategory = APIData.Classes[class].Properties[property].Category
+			local categoryContainer
+			local propertiesTable
+			
+			if (not categoryContainers[propertyCategory]) then
+				categoryContainer = createCategoryContainer(propertyCategory)
+			else
+				categoryContainer = categoryContainers[propertyCategory]
+			end
+			propertiesTable = categoryContainer.Table
+			categoryContainer.UI.Visible = false
+			
+			propertiesTable:AddRow(class.."."..property)
+			propertiesTable:SetVisible(class.."."..property..":", false)
+			populatePropertyRow(propertiesTable, class, property)
+			
+			propertiesTable:SortRows(function(a, b)
+				local _, propertyNameA = string.match(a, "(.+)%.(.+)")
+				local _, propertyNameB = string.match(b, "(.+)%.(.+)")
+				
+				return propertyNameA < propertyNameB
+			end)
+		end
+	end 
+end
+
+--- SETTINGS 
 
 local CoreGui = game:GetService("CoreGui")
 
@@ -471,8 +745,13 @@ plugin.Unloading:Connect(function()
 	widget:Destroy()
 	
 	selectionConnection:Disconnect()
+	plugin:SetSetting("PropertiesMod", HttpService:JSONEncode(pluginSettings))
 	print("Cleaned up PropertiesMod")
 end)
+
+---
+
+refreshPropertiesList(Selection:Get())
 
 ---
 
