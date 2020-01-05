@@ -12,7 +12,11 @@ function APILibrarian.new(apiData, enableCache)
 	setmetatable(self, {__index = APILibrarian})
 
 	if enableCache then
-		self.__cache = {}
+		self.__cache = {
+			Properties = {},
+			ImmediateProperties = {},
+			Hierarchy = {},
+		}
 	end
 	
 	return self
@@ -55,10 +59,6 @@ function APILibrarian:GetProperties(class)
 	if self.__canCache then
 		local functionCache = self.__cache.Properties
 
-		if (not functionCache) then
-			self.__cache.Properties = {}
-		end
-
 		if functionCache[class] then
 			return functionCache[class]
 		end
@@ -93,10 +93,6 @@ function APILibrarian:GetImmediateProperties(class)
 	if self.__canCache then
 		local functionCache = self.__cache.ImmediateProperties
 
-		if (not functionCache) then
-			self.__cache.ImmediateProperties = {}
-		end
-
 		if functionCache[class] then
 			return functionCache[class]
 		end
@@ -123,10 +119,6 @@ end
 function APILibrarian:GetClassHierarchy(class)
 	if self.__canCache then
 		local functionCache = self.__cache.Hierarchy
-
-		if (not functionCache) then
-			self.__cache.Hierarchy = {}
-		end
 
 		if functionCache[class] then
 			return functionCache[class]

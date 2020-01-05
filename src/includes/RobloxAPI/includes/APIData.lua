@@ -1,11 +1,21 @@
--- creating a new API takes ~0.25s
-
 local APIData = {}
-local t = require(script.Parent:WaitForChild("t"))
 
-local RobloxAPI = require(2247441113)
-local RobloxAPIDump = RobloxAPI.ApiDump
+-- Yes I know that relying on this GitHub repo probably isn't the best solution
+local RobloxAPIDump do
+	local HttpService = game:GetService("HttpService")
+	
+	local success, data = pcall(function() return HttpService:GetAsync("https://raw.githubusercontent.com/CloneTrooper1019/Roblox-Client-Tracker/roblox/API-Dump.json") end)
+	if (not success) then
+		warn("[RobloxAPI] Could not get API data, got error: " .. data)
+		return nil
+	end
+	
+	RobloxAPIDump = HttpService:JSONDecode(data)
+end
+
 local RobloxAPIClasses = RobloxAPIDump.Classes
+
+local t = require(script.Parent:WaitForChild("t"))
 
 local dataSanityChecks = {}
 local apiSanityChecks = {}
@@ -38,224 +48,90 @@ end
 
 ---
 
-dataSanityChecks["Extension"] = function(extension)
-	if (not extension.ExtensionType) then return false, "missing extension type" end
-	if (type(extension.ExtensionType) ~= "string") then return false, "extension type must be a string, got "..type(extension.ExtensionType) end
-	
-	if (extension.ExtensionType == "Member") then
-		if (not extension.MemberClass) then return false, "missing class that this member belongs to" end
-		if (type(extension.MemberClass) ~= "string") then return false, "member class must be a string, got "..type(extension.MemberClass) end
-	elseif (extension.ExtensionType == "Class") then
-		if (not extension.Superclass) then return false, "missing superclass name" end
-		if (type(extension.Superclass) ~= "string") then return false, "superclass must be a string, got "..type(extension.Superclass) end
-	end
-	
-	if (not extension.ExtensionData) then return false, "missing extension data" end -- I mean, the extension data is KIND OF IMPORTANT.
-	
-	if (extension.ExtensionType == "Member") then
-		local isMember, memberCheckMsg = apiSanityChecks.Member(extension.ExtensionData)
-		if (not isMember) then return false, "member check failed: "..memberCheckMsg end
-		
-		local isValidMember, validMemberCheckMsg = apiSanityChecks[extension.ExtensionData.MemberType](extension.ExtensionData)
-		if (not isValidMember) then return false, "member check failed: "..validMemberCheckMsg end
-	elseif (extension.ExtensionType == "Class") then
-		local classIsValid, classCheckMsg = dataSanityChecks.Class(extension.ExtensionData)
-		if (not classIsValid) then return false, classCheckMsg end
-	else
-		return false, "unsupported extension type "..extension.ExtensionType
-	end
-	
-	return true
-end
+local interfaces = {}
 
-dataSanityChecks["DataTypeDescriptor"] = function(dataTypeDescriptor)
-	if (not dataTypeDescriptor.Name) then return false, "missing name" end
-	if (type(dataTypeDescriptor.Name) ~= "string") then return false, "name must be a string, got "..type(dataTypeDescriptor.Name) end
-	
-	if (not dataTypeDescriptor.Category) then return false, "missing category" end
-	if (type(dataTypeDescriptor.Category) ~= "string") then return false, "category must be a string, got "..type(dataTypeDescriptor.Category) end
-	
-	return true
-end
+interfaces.DataTypeDescriptor = t.interface({
+	Category = t.string,
+	Name = t.string
+})
 
-dataSanityChecks["ParameterDescriptor"] = function(parameterDescriptor)
-	if (not parameterDescriptor.Name) then return false, "missing name" end
-	if (type(parameterDescriptor.Name) ~= "string") then return false, "name must be string, got "..type(parameterDescriptor.Name) end
-	
-	local dataTypeDescSuccess, checkMsg = dataSanityChecks.DataTypeDescriptor(parameterDescriptor.Type)
-	if (not dataTypeDescSuccess) then return false, checkMsg end
-	
-	return true
-end
+interfaces.ParameterDescriptor = t.interface({
+	Name = t.string,
+	Type = interfaces.DataTypeDescriptor
+})
 
-dataSanityChecks["FunctionParameterDescriptor"] = function(functionParameterDescriptor)
-	local parameterDescSuccess, checkMsg = dataSanityChecks.ParameterDescriptor(functionParameterDescriptor)
-	if (not parameterDescSuccess) then return false, checkMsg end
-	
-	if (type(functionParameterDescriptor.Default) ~= "nil") then
-		if (type(functionParameterDescriptor.Default) ~= "string") then return false, "default must be a string, got "..type(functionParameterDescriptor.Default) end
-	end
-	
-	return true
-end
+interfaces.FunctionParameterDescriptor = t.interface({
+	Name = t.string,
+	Type = interfaces.DataTypeDescriptor,
+	Default = t.optional(t.string)
+})
 
-dataSanityChecks["Class"] = function(class)
-	if (not class.Name) then return false, "missing name" end
-	if (type(class.Name) ~= "string") then return false, "name must be a string, got "..type(class.Name) end
+interfaces.APICallback = t.interface({
+	MemberType = t.string,
+	Name = t.string,
+	Security = t.string,
+	Tags = t.map(t.string, t.boolean),
 	
---	if (not class.MemoryCategory) then return false, "missing memory category" end
---	if (type(class.MemoryCategory) ~= "string") then return false, "memory category must be a string, got "..type(class.MemoryCategory) end
+	Parameters = t.array(interfaces.ParameterDescriptor),
+	ReturnType = interfaces.DataTypeDescriptor,
+})
 	
-	if (not class.Tags) then return false, "missing tags" end
-	if (type(class.Tags) ~= "table") then return "tags must be a table, got "..type(class.Tags) end
+interfaces.APIEvent = t.interface({
+	MemberType = t.string,
+	Name = t.string,
+	Security = t.string,
+	Tags = t.map(t.string, t.boolean),
 	
-	if (not class.Callbacks) then return false, "missing callbacks" end
-	if (not class.Events) then return false, "missing events" end
-	if (not class.Functions) then return false, "missing functions" end
-	if (not class.Properties) then return false, "missing properties" end
-	if (type(class.Callbacks) ~= "table") then return false, "callbacks must be a table, got "..type(class.Callbacks) end
-	if (type(class.Events) ~= "table") then return false, "events must be a table, got "..type(class.Events) end
-	if (type(class.Functions) ~= "table") then return false, "functions must be a table, got "..type(class.Functions) end
-	if (type(class.Properties) ~= "table") then return false, "properties must be a table, got "..type(class.Properties) end
+	Parameters = t.array(interfaces.ParameterDescriptor),
+})
 	
-	for i = 1, #class.Callbacks do
-		local member = class.Callbacks[i]
-		
-		local memberIsValid, memberCheckMsg = apiSanityChecks.Member(member)
-		if (not memberIsValid) then return false, "member failed check: "..memberCheckMsg end
-		
-		local callbackIsValid, callbackCheckMsg = apiSanityChecks.Callback(member)
-		if (not callbackIsValid) then return false, "callback failed check: "..callbackCheckMsg end
-	end
+interfaces.APIFunction = t.interface({
+	MemberType = t.string,
+	Name = t.string,
+	Security = t.string,
+	Tags = t.map(t.string, t.boolean),
 	
-	for i = 1, #class.Events do
-		local member = class.Callbacks[i]
-		
-		local memberIsValid, memberCheckMsg = apiSanityChecks.Member(member)
-		if (not memberIsValid) then return false, "member failed check: "..memberCheckMsg end
-		
-		local eventIsValid, eventCheckMsg = apiSanityChecks.Callback(member)
-		if (not eventIsValid) then return false, "callback failed check: "..eventCheckMsg end
-	end
+	Parameters = t.array(interfaces.ParameterDescriptor),
+	ReturnType = interfaces.DataTypeDescriptor,
+})
 	
-	for i = 1, #class.Functions do
-		local member = class.Callbacks[i]
-		
-		local memberIsValid, memberCheckMsg = apiSanityChecks.Member(member)
-		if (not memberIsValid) then return false, "member failed check: "..memberCheckMsg end
-		
-		local functionIsValid, functionCheckMsg = apiSanityChecks.Callback(member)
-		if (not functionIsValid) then return false, "callback failed check: "..functionCheckMsg end
-	end
+interfaces.APIProperty = t.interface({
+	MemberType = t.string,
+	Name = t.string,
+	Security = t.interface({
+		Read = t.string,
+		Write = t.string
+	}),
+	Tags = t.map(t.string, t.boolean),
 	
-	for i = 1, #class.Properties do
-		local member = class.Callbacks[i]
-		
-		local memberIsValid, memberCheckMsg = apiSanityChecks.Member(member)
-		if (not memberIsValid) then return false, "member failed check: "..memberCheckMsg end
-		
-		local propertyIsValid, propertyCheckMsg = apiSanityChecks.Callback(member)
-		if (not propertyIsValid) then return false, "callback failed check: "..propertyCheckMsg end
-	end
+	Category = t.string,
+	Serialization = t.interface({
+		CanLoad = t.boolean,
+		CanSave = t.boolean
+	}),
 	
-	return true
-end
+	ValueType = interfaces.DataTypeDescriptor,
+})
 
----
+interfaces.APIClass = t.interface({
+	Callbacks = t.map(t.string, interfaces.APICallback),
+	Events = t.map(t.string, interfaces.APIEvent),
+	Functions = t.map(t.string, interfaces.APIFunction),
+	Properties = t.map(t.string, interfaces.APIProperty),
+	
+	MemoryCategory = t.string,
+	Name = t.string,
+	Tags = t.map(t.string, t.boolean),
+	
+--	Superclass = t.optional(interfaces.APIClass),
+})
 
-apiSanityChecks["Member"] = function(member)
-	if (not member.Name) then return false, "missing name" end
-	if (not member.MemberType) then return false, "missing member type" end
-	if (not member.Tags) then return false, "missing tags table" end
-	
-	if (type(member.Name) ~= "string") then return false, "name must be a string, got "..type(member.Name) end
-	if (type(member.MemberType) ~= "string") then return false, "member type must be a string, got "..type(member.MemberType) end
-	if (type(member.Tags) ~= "table") then return false, "tags must be a table, got "..type(member.Tags) end
-	
-	if (not member.Security) then return false, "missing security" end
-	
-	if (member.MemberType == "Property") then
-		if (type(member.Security) ~= "table") then return false, "security must be a table, got "..type(member.Security) end
-		
-		if (not member.Security.Read) then return false, "missing read security" end
-		if (not member.Security.Write) then return false, "missing write security" end
-		if (type(member.Security.Read) ~= "string") then return false, "read security must be a string, got"..type(member.Security.Read) end
-		if (type(member.Security.Write) ~= "string") then return false, "write security must be a string, got"..type(member.Security.Write) end
-	else
-		if (type(member.Security) ~= "string") then return false, "security must be a string, got "..type(member.Security) end
-	end
-	
-	if (not apiSanityChecks[member.MemberType]) then return false, "unknown member type "..member.MemberType end
-	
-	return true
-end
-
-apiSanityChecks["Callback"] = function(member)
-	local returnTypeSuccess, returnTypeCheckMsg = dataSanityChecks.DataTypeDescriptor(member.ReturnType)
-	if (not returnTypeSuccess) then return false, returnTypeCheckMsg end
-	
-	if (not member.Parameters) then return false, "missing parameters" end
-	if (type(member.Parameters) ~= "table") then return false, "parameters must be a table, got "..type(member.Parameters) end
-	
-	for i = 1, #member.Parameters do
-		local parameter = member.Parameters[i]
-		
-		local parameterDescSuccess, parameterDescCheckMsg = dataSanityChecks.ParameterDescriptor(parameter)
-		if (not parameterDescSuccess) then return false, string.format("parameter failed check (%s): %s", (parameter.Name or "unknown parameter"), parameterDescCheckMsg) end
-	end
-	
-	return true
-end
-
-apiSanityChecks["Event"] = function(member)
-	if (not member.Parameters) then return false, "missing parameters" end
-	if (type(member.Parameters) ~= "table") then return false, "parameters must be a table, got "..type(member.Parameters) end
-	
-	for i = 1, #member.Parameters do
-		local parameter = member.Parameters[i]
-		
-		local parameterDescSuccess, checkMsg = dataSanityChecks.ParameterDescriptor(parameter)
-		if (not parameterDescSuccess) then return false, string.format("parameter failed check (%s): %s", (parameter.Name or "unknown parameter"), checkMsg) end
-	end
-	
-	return true
-end
-
-apiSanityChecks["Function"] = function(member)
-	local dataTypeDescSuccess, dataTypeDescCheckMsg = dataSanityChecks.DataTypeDescriptor(member.ReturnType)
-	if (not dataTypeDescSuccess) then return false, dataTypeDescCheckMsg end
-	
-	if (not member.Parameters) then return false, "missing parameters" end
-	if (type(member.Parameters) ~= "table") then return false, "parameters must be a table, got "..type(member.Parameters) end
-	
-	for i = 1, #member.Parameters do
-		local parameter = member.Parameters[i]
-		
-		local functionParameterDescSuccess, functionParameterDescCheckMsg = dataSanityChecks.FunctionParameterDescriptor(parameter)
-		if (not functionParameterDescSuccess) then return false, string.format("parameter failed check (%s): %s", (parameter.Name or "unknown parameter"), functionParameterDescCheckMsg) end
-	end
-	
-	return true
-end
-
-apiSanityChecks["Property"] = function(member)
-	if (not member.Category) then return false, "missing category" end
-	if (type(member.Category) ~= "string") then return false, "category must be a string, got "..type(member.Category) end
-	
-	if (not member.Serialization) then return false, "missing serialization" end
-	if (type(member.Serialization) ~= "table") then return false, "serialization must be a category, got "..type(member.Serialization) end
-	
-	-- it's a boolean so it can be false
---	if (not member.Serialization.CanLoad) then return false, "missing canLoad serialization" end
---	if (not member.Serialization.CanSave) then return false, "missing canSave serialization" end
-	if (type(member.Serialization.CanLoad) ~= "boolean") then return false, "canLoad must be a boolean, got "..type(member.Serialization.CanLoad) end
-	if (type(member.Serialization.CanSave) ~= "boolean") then return false, "canSave must be a boolean, got "..type(member.Serializaion.CanSave) end
-	
-	local valueTypeSuccess, checkMsg = dataSanityChecks.DataTypeDescriptor(member.ValueType)
-	if (not valueTypeSuccess) then return false, checkMsg end
-	
-	return true
-end
+interfaces.Extension = t.interface({
+	ExtensionType = t.string,
+	MemberClass = t.optional(t.string),
+	Superclass = t.optional(t.string),
+	ExtensionData = t.union(interfaces.APIClass, interfaces.APICallback, interfaces.APIEvent, interfaces.APIFunction, interfaces.APIProperty)
+})
 
 ---
 
@@ -429,7 +305,7 @@ function APIData:Extend(extensions)
 	for i = 1, #extensions do
 		local extension = extensions[i]
 		
-		local isValidExtension, invalidMsg = dataSanityChecks.Extension(extension)
+		local isValidExtension, invalidMsg = interfaces.Extension(extension) --dataSanityChecks.Extension(extension)
 		if isValidExtension then
 			local extensionType = extension.ExtensionType
 			
