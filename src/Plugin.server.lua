@@ -1,3 +1,5 @@
+-- TODO: Fix bugs with toggling categories
+
 local RunService = game:GetService("RunService")
 
 if (not RunService:IsStudio()) then warn("PropertiesMod only works in Studio") return false end
@@ -9,8 +11,8 @@ local root = script.Parent
 local includes = root:WaitForChild("includes")
 
 local RobloxAPI = require(includes:WaitForChild("RobloxAPI"):WaitForChild("API"))
-local TableLayout = require(includes:WaitForChild("TableLayout"):WaitForChild("TableLayout"))
 
+local PROPERTY_ROW_COLUMN_DEFAULT_WIDTH = 150
 local SECTION_HEADER_HEIGHT = 26
 local PROPERTY_NAME_ROW_HEIGHT = 26
 local PROPERTY_EDITOR_COLUMN_WIDTH = 150
@@ -198,6 +200,10 @@ end
 
 --- WIDGET
 
+local tableRows = {}
+local nameCells = {}
+local editorCells = {}
+
 local widget = plugin:CreateDockWidgetPluginGui(widgetInfo.WIDGET_ID, widgetInfo.WIDGET_PLUGINGUI_INFO)
 widget.Archivable = false
 widget.Name = widgetInfo.WIDGET_ID
@@ -217,11 +223,22 @@ propertiesListScrollingFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarP
 propertiesListScrollingFrame.TopImage = "rbxassetid://2060768460"
 propertiesListScrollingFrame.MidImage = "rbxassetid://2060767807"
 propertiesListScrollingFrame.BottomImage = "rbxassetid://2060770132"
+propertiesListScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(34, 34, 34)
 propertiesListScrollingFrame.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 propertiesListScrollingFrame.BorderColor3 = Color3.fromRGB(34, 34, 34)
 propertiesListScrollingFrame.BorderSizePixel = 1
 propertiesListScrollingFrame.ScrollBarThickness = 18
 propertiesListScrollingFrame.ClipsDescendants = true
+
+local propertiesListUITableLayout = Instance.new("UITableLayout")
+propertiesListUITableLayout.FillDirection = Enum.FillDirection.Vertical
+propertiesListUITableLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+propertiesListUITableLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+propertiesListUITableLayout.FillEmptySpaceColumns = false
+propertiesListUITableLayout.FillEmptySpaceRows = false
+propertiesListUITableLayout.MajorAxis = Enum.TableMajorAxis.RowMajor
+propertiesListUITableLayout.Padding = UDim2.new(0, 0, 0, 0)
+propertiesListUITableLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 local propertiesListUIListLayout = Instance.new("UIListLayout")
 propertiesListUIListLayout.FillDirection = Enum.FillDirection.Vertical
@@ -230,9 +247,41 @@ propertiesListUIListLayout.SortOrder = Enum.SortOrder.Name
 propertiesListUIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 propertiesListUIListLayout.Padding = UDim.new(0, 0)
 
-local function populatePropertyRow(propertiesTable, className, propertyName)
-	local cell = propertiesTable:Get(className.."."..propertyName..":PropertyName")
-	
+local function getPropertyNormalName(className, propertyName)
+	return className .. "/" .. propertyName
+end
+
+local function parsePropertyNormalName(propertyNormalName)
+	return string.match(propertyNormalName, "(.+)/(.+)")
+end
+
+local function newPropertyRow(className, propertyName)
+	local normalName = getPropertyNormalName(className, propertyName)
+	if tableRows[normalName] then return end
+
+	local row = Instance.new("Frame")
+	row.Name = normalName
+	row.Size = UDim2.new(0, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
+	row.BorderSizePixel = 0
+
+	local propertyNameCell = Instance.new("Frame")
+	propertyNameCell.AnchorPoint = Vector2.new(0, 0.5)
+	propertyNameCell.Position = UDim2.new(0, 0, 0.5, 0)
+	propertyNameCell.Size = UDim2.new(0, PROPERTY_ROW_COLUMN_DEFAULT_WIDTH, 0, PROPERTY_NAME_ROW_HEIGHT)
+	propertyNameCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+	propertyNameCell.BorderColor3 = Color3.fromRGB(34, 34, 34)
+	propertyNameCell.Name = "PropertyName"
+
+	local editorCell = Instance.new("Frame")
+	editorCell.AnchorPoint = Vector2.new(1, 0.5)
+	editorCell.Position = UDim2.new(1, 0, 0.5, 0)
+	editorCell.Size = UDim2.new(0, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
+	editorCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+	editorCell.BorderColor3 = Color3.fromRGB(34, 34, 34)	
+	editorCell.Name = "Editor"
+
+	-- populate
+
 	local isReadOnly = APILib:IsPropertyReadOnly(className, propertyName)
 
 	local propertyNameLabel = Instance.new("TextButton")
@@ -260,15 +309,22 @@ local function populatePropertyRow(propertiesTable, className, propertyName)
 		rmbMenu:Destroy()
 	end)
 	
-	cell.MouseEnter:Connect(function()
-		cell.BackgroundColor3 = Color3.fromRGB(66, 66, 66)
+	propertyNameCell.MouseEnter:Connect(function()
+		propertyNameCell.BackgroundColor3 = Color3.fromRGB(66, 66, 66)
 	end)
 	
-	cell.MouseLeave:Connect(function()
-		cell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+	propertyNameCell.MouseLeave:Connect(function()
+		propertyNameCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 	end)
 	
-	propertyNameLabel.Parent = cell
+	propertyNameLabel.Parent = propertyNameCell
+	propertyNameCell.Parent = row
+	editorCell.Parent = row
+
+	tableRows[normalName] = row
+	nameCells[normalName] = propertyNameCell
+	editorCells[normalName] = editorCell
+	return row
 end
 
 --[[
@@ -381,45 +437,39 @@ local function createCategoryContainer(categoryName)
 	headerText.TextYAlignment = Enum.TextYAlignment.Center
 	headerText.Text = categoryName
 	
-	local propertiesTable = TableLayout.new({
-		Columns = { "PropertyName", "Editor" },
-		Sizes = {
-			Rows = {
-				[":DEFAULT"] = PROPERTY_NAME_ROW_HEIGHT,
-			},
-			Columns = {
-				["Editor"] = PROPERTY_EDITOR_COLUMN_WIDTH,
-			}
-		}
-	})
-	
+	--[[
 	propertiesTable:SetStyleCallback(function(cell)
 		cell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 	--	cell.BorderColor3 = Color3.fromRGB(34, 34, 34)	
 		cell.BorderSizePixel = 0
 	end)
+	--]]
 	
-	local propertiesTableUI = propertiesTable.UIRoot
+	local propertiesTableUI = Instance.new("Frame")
 	propertiesTableUI.Name = "PropertiesList"
 	propertiesTableUI.AnchorPoint = Vector2.new(0.5, 1)
 	propertiesTableUI.Position = UDim2.new(0.5, 0, 1, 0)
 	propertiesTableUI.BackgroundTransparency = 1
 	propertiesTableUI.BorderSizePixel = 0
 	propertiesTableUI.Visible = isToggled
+
+	local propertiesTableLayout = propertiesListUITableLayout:Clone()
+	propertiesTableLayout.Parent = propertiesTableUI
 	
 	headerToggle.MouseButton1Click:Connect(function()
 		isToggled = (not isToggled)
-		local tableSize = propertiesTable:GetSize()
+		local tableSize = propertiesTableLayout.AbsoluteContentSize
 		
 		headerToggle.Text = isToggled and "-" or "+"
 		propertiesTableUI.Visible = isToggled
-		categoryFrame.Size = isToggled and UDim2.new(0, tableSize.X, 0, tableSize.Y + PROPERTY_NAME_ROW_HEIGHT) or UDim2.new(0, 0, 0, 0)
+		categoryFrame.Size = isToggled and UDim2.new(0, tableSize.X, 0, tableSize.Y + PROPERTY_NAME_ROW_HEIGHT) or UDim2.new(1, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
 	end)
 	
-	propertiesTableUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	propertiesTableLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		if (not isToggled) then return end
-		local tableSize = propertiesTable:GetSize()
+		local tableSize = propertiesTableLayout.AbsoluteContentSize
 		
+		propertiesTableUI.Size = UDim2.new(0, tableSize.X, 0, tableSize.Y)
 		categoryFrame.Size = UDim2.new(0, tableSize.X, 0, tableSize.Y + PROPERTY_NAME_ROW_HEIGHT)
 	end)
 	
@@ -431,7 +481,7 @@ local function createCategoryContainer(categoryName)
 	
 	categoryContainers[categoryName] = {
 		UI = categoryFrame,
-		Table = propertiesTable
+		TableUI = propertiesTableUI
 	}
 	
 	return categoryContainers[categoryName]
@@ -570,70 +620,87 @@ local function refreshPropertiesList(selection)
 			for j = 1, #classProperties do
 				local property = classProperties[j]
 				
-				selectionProperties[#selectionProperties + 1] = className.."."..property
+				selectionProperties[#selectionProperties + 1] = getPropertyNormalName(className, property)
 			end
 		end
 	end
 	purgeDuplicates(selectionProperties)
 	
 	for _, category in pairs(categoryContainers) do
-		local catTable = category.Table
-		
-		for row in pairs(catTable.Rows) do
-			catTable:SetVisible(row..":", false)
-		end
-		
 		category.UI.Visible = false
 	end
+
+	for _, tableRow in pairs(tableRows) do
+		tableRow.Visible = false
+	end
 	
+	local categoriesWithNewRows = {}
 	for i = 1, #selectionProperties do
 		local property = selectionProperties[i]
-		local className, propertyName = string.match(property, "(.+)%.(.+)")
+		local className, propertyName = parsePropertyNormalName(property)
 		
 		local propertyCategory = APIData.Classes[className].Properties[propertyName].Category
-		local categoryContainer
+		local categoryContainer = categoryContainers[propertyCategory]
 		local propertiesTable
 		
-		if (not categoryContainers[propertyCategory]) then
+		if (not categoryContainer) then
 			categoryContainer = createCategoryContainer(propertyCategory)
-		else
-			categoryContainer = categoryContainers[propertyCategory]
 		end
-		propertiesTable = categoryContainer.Table
-		
 		categoryContainer.UI.Visible = true
-		
-		if (not propertiesTable:Get(property..":")) then
-			propertiesTable:AddRow(property)
-			populatePropertyRow(propertiesTable, className, propertyName)
-			
-			propertiesTable:SortRows(function(a, b)
-				local _, propertyNameA = string.match(a, "(.+)%.(.+)")
-				local _, propertyNameB = string.match(b, "(.+)%.(.+)")
+
+		local tableRow = tableRows[property]
+		if (not tableRow) then
+			tableRow = newPropertyRow(className, propertyName)
+			tableRow.Parent = categoryContainer.TableUI
+
+			categoriesWithNewRows[#categoriesWithNewRows + 1] = propertyCategory
+		else
+			tableRow.Visible = true
+		end
+
+		local textWidth = TextService:GetTextSize(propertyName, TEXT_TEXTSIZE, TEXT_FONT, Vector2.new()).X
+		if (textWidth > nameColumnWidth) then nameColumnWidth = textWidth end
+	end
+
+	-- resort any category with new rows
+	for _, categoryName in pairs(categoriesWithNewRows) do
+		local categoryContainer = categoryContainers[categoryName]
+
+		local rows = {}
+		local tableUI = categoryContainer.TableUI
+
+		for _, row in pairs(tableUI:GetChildren()) do
+			if row:IsA("GuiObject") then
+				rows[#rows + 1] = row.Name
+			end
+		end
+
+		if (#rows > 0) then
+			table.sort(rows, function(a, b)
+				local _, propertyNameA = parsePropertyNormalName(a)
+				local _, propertyNameB = parsePropertyNormalName(b)
 				
 				return propertyNameA < propertyNameB
 			end)
-		else
-			propertiesTable:SetVisible(property..":", true)
+
+			for i, rowName in ipairs(rows) do
+				tableUI:FindFirstChild(rowName).LayoutOrder = i
+			end
 		end
-		
-		local textWidth = TextService:GetTextSize(propertyName, TEXT_TEXTSIZE, TEXT_FONT, Vector2.new()).X
-		if (textWidth > nameColumnWidth) then nameColumnWidth = textWidth end
 	end
 	
 	editorColumnWidth = math.max(150, propertiesListScrollingFrame.AbsoluteSize.X - (nameColumnWidth + 24 + 10))
 	
-	for _, category in pairs(categoryContainers) do
-		local categoryTable = category.Table 
-		
-		categoryTable:SetColumnWidth("PropertyName", nameColumnWidth + 24 + 10)
-		categoryTable:SetColumnWidth("Editor", editorColumnWidth)
+	for _, tableRow in pairs(tableRows) do
+		tableRow.Size = UDim2.new(0, editorColumnWidth + nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
+		tableRow.PropertyName.Size = UDim2.new(0, nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
+		tableRow.Editor.Size = UDim2.new(0, editorColumnWidth, 0, PROPERTY_NAME_ROW_HEIGHT)
 	end
 end
 
 local selectionConnection
 selectionConnection = SelectionChanged:Connect(refreshPropertiesList)
-
+--[[
 widget:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 	editorColumnWidth = math.max(150, propertiesListScrollingFrame.AbsoluteSize.X - (nameColumnWidth + 24 + 10))
 	
@@ -646,69 +713,65 @@ widget:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		categoryFrame.Size = UDim2.new(0, tableSize.X, categoryFrame.Size.Y.Scale, categoryFrame.Size.Y.Offset)
 	end
 end)
+--]]
 
 --- PRELOAD
 
-if pluginSettings.Config.PreloadAllClasses then
-	for class in pairs(APIData.Classes) do
-		local properties = APILib:GetImmediateProperties(class)
-		
-		for _, property in pairs(properties) do
-			local propertyCategory = APIData.Classes[class].Properties[property].Category
-			local categoryContainer
-			local propertiesTable
+do
+	local classes
+
+	if pluginSettings.Config.PreloadAllClasses then
+		classes = APIData.Classes
+	elseif pluginSettings.Config.PreloadCommonClasses then
+		classes = require(includes:WaitForChild("CommonClasses"))
+	end
+
+	if classes then
+		for class in pairs(classes) do
+			local properties = APILib:GetImmediateProperties(class)
 			
-			if (not categoryContainers[propertyCategory]) then
-				categoryContainer = createCategoryContainer(propertyCategory)
-			else
-				categoryContainer = categoryContainers[propertyCategory]
-			end
-			propertiesTable = categoryContainer.Table
-			categoryContainer.UI.Visible = false
-			
-			propertiesTable:AddRow(class.."."..property)
-			propertiesTable:SetVisible(class.."."..property..":", false)
-			populatePropertyRow(propertiesTable, class, property)
-			
-			propertiesTable:SortRows(function(a, b)
-				local _, propertyNameA = string.match(a, "(.+)%.(.+)")
-				local _, propertyNameB = string.match(b, "(.+)%.(.+)")
+			for _, property in pairs(properties) do
+				local propertyCategory = APIData.Classes[class].Properties[property].Category
+				local categoryContainer = categoryContainers[propertyCategory]
 				
-				return propertyNameA < propertyNameB
-			end)
+				if (not categoryContainer) then
+					categoryContainer = createCategoryContainer(propertyCategory)
+				end
+				categoryContainer.UI.Visible = false
+
+				local tableRow = tableRows[property]
+				tableRow = newPropertyRow(class, property)
+				tableRow.Visible = false
+				tableRow.Parent = categoryContainer.TableUI
+			end
+		end
+
+		-- sort
+
+		for _, categoryContainer in pairs(categoryContainers) do
+			local rows = {}
+			local tableUI = categoryContainer.TableUI
+	
+			for _, row in pairs(tableUI:GetChildren()) do
+				if row:IsA("GuiObject") then
+					rows[#rows + 1] = row.Name
+				end
+			end
+	
+			if (#rows > 0) then
+				table.sort(rows, function(a, b)
+					local _, propertyNameA = parsePropertyNormalName(a)
+					local _, propertyNameB = parsePropertyNormalName(b)
+					
+					return propertyNameA < propertyNameB
+				end)
+	
+				for i, rowName in ipairs(rows) do
+					tableUI:FindFirstChild(rowName).LayoutOrder = i
+				end
+			end
 		end
 	end
-elseif pluginSettings.Config.PreloadCommonClasses then
-	local commonClasses = require(includes:WaitForChild("CommonClasses"))
-	
-	for _, class in pairs(commonClasses) do
-		local properties = APILib:GetImmediateProperties(class)
-		
-		for _, property in pairs(properties) do
-			local propertyCategory = APIData.Classes[class].Properties[property].Category
-			local categoryContainer
-			local propertiesTable
-			
-			if (not categoryContainers[propertyCategory]) then
-				categoryContainer = createCategoryContainer(propertyCategory)
-			else
-				categoryContainer = categoryContainers[propertyCategory]
-			end
-			propertiesTable = categoryContainer.Table
-			categoryContainer.UI.Visible = false
-			
-			propertiesTable:AddRow(class.."."..property)
-			propertiesTable:SetVisible(class.."."..property..":", false)
-			populatePropertyRow(propertiesTable, class, property)
-			
-			propertiesTable:SortRows(function(a, b)
-				local _, propertyNameA = string.match(a, "(.+)%.(.+)")
-				local _, propertyNameB = string.match(b, "(.+)%.(.+)")
-				
-				return propertyNameA < propertyNameB
-			end)
-		end
-	end 
 end
 
 --- SETTINGS 

@@ -1,6 +1,3 @@
 [submodule "src/includes/RobloxAPI"]
 	path = src/includes/RobloxAPI
-	url = https://github.com/blupo/RobloxAPI
-[submodule "src/includes/TableLayout"]
-	path = src/includes/TableLayout
-	url = https://github.com/Blupo/TableLayout
+	url = https://github.com/Blupo/RobloxAPI
