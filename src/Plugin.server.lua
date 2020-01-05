@@ -1,4 +1,3 @@
--- TODO: Fix bugs with toggling categories
 -- TODO: Scrollbars
 
 local RunService = game:GetService("RunService")
@@ -29,32 +28,6 @@ local HttpService = game:GetService("HttpService")
 
 ---
 
--- SelectionChanged that doesn't spam that much
--- https://devforum.roblox.com/t/weird-selectionchanged-behavior/22024/2
--- Credit to Fractality
-
-local SelectionChanged do
-	local selectionChanged = Instance.new("BindableEvent")
-	local d0, d1 = true, true
-	
-	RunService.Heartbeat:Connect(function()
-		d0, d1 = true, true
-	end)
-	
-	Selection.SelectionChanged:Connect(function()
-		if d0 then
-			d0 = false
-			selectionChanged:Fire()
-		elseif d1 then
-			d1 = false
-			RunService.Heartbeat:Wait()
-			selectionChanged:Fire()
-		end
-	end)
-	
-	SelectionChanged = selectionChanged.Event
-end
-
 local function purgeDuplicates(tab)
 	if (#tab <= 1) then return end
 	local x = 1
@@ -80,7 +53,9 @@ local pluginSettings = --[[plugin:GetSetting("PropertiesMod") and HttpService:JS
 		ShowDeprecatedProperties = false,
 
 		PreloadClasses = "Common",
-		-- Common, All, or None
+		-- Common, All, or None,
+
+		EditorColumnWidth = 150,
 	},
 	
 	FilterPreferences = {},
@@ -95,8 +70,6 @@ local editorPreferences = {}
 local categoryContainers = {}
 local nameColumnWidth = 0
 local editorColumnWidth = 0
-
-local shownRestrictedInstancesWarning = false
 
 local widgetInfo = {
 	WIDGET_ID = "PropertiesMod",
@@ -120,78 +93,6 @@ if (not pluginSettings.Config.ShowDeprecatedProperties) then
 	APIData:RemoveDeprecatedMembers()
 end
 
-local function getEditor(class, property)
-	-- Property > Data Type
-	
-	if editorFilters[class.."."..property] then
-		return editorFilters[class.."."..property]
-	else
-		
-	end
-end
-
---- LOAD EDITORS
-
-local v = require(3049494603) -- semver module
-
-local defaultEditorFolder = root:WaitForChild("default_editors")
-
-local function loadEditorFromFolder(folder)
-	local editorinfoFile = folder:WaitForChild("editorinfo.lua", 5)
-	if (not editorinfoFile) then warn(folder.Name .. " is missing its editorinfo file, could not be loaded") return end
-	
-	local editorinfo = require(editorinfoFile)
-	if (type(editorinfo) ~= "table") then warn("required the entry point file for "..folder.Name.." but it wasn't a table") return end
-	
-	local uniqueId = editorinfo.unique_id
-	local version = editorinfo.version
-	local entryPoint = editorinfo.entry_point or "main.lua"
-	
-	if (not uniqueId) then warn("unknown ID for editor, debug ID for container is "..folder:GetDebugId()) return end
-	if (not version) then warn("unknown version for editor "..uniqueId) return end
---	if (not entryPoint) then warn("entry point was not declared for editor "..uniqueId..", defaulting to main.lua") end
-	
-	local entryPointFile = folder:WaitForChild(entryPoint, 5)
-	if (not entryPointFile) then warn("could not find the entry point file for editor "..uniqueId..", tried looking for "..entryPoint.." but it was not found") return end
-	if (not entryPointFile:IsA("ModuleScript")) then warn("found the entry point file for "..uniqueId.." but it wasn't a ModuleScript") return end
-	
-	local editorConstructor = require(entryPointFile)
-	if (type(editorConstructor) ~= "function") then warn("required the entry point file for "..uniqueId.." but it wasn't a function") return end
-	
-	---
-	
-	local success, version = pcall(v, version)
-	if (not success) then warn("could not serialise version for editor "..uniqueId.." version given was "..tostring(version)) return end
-	
-	if editors[uniqueId] then
-		local loadedEditorVersion = v(editors[uniqueId].info.version)
-		
-		if loadedEditorVersion > version then
-			warn("a more recent version of "..uniqueId.." is already loaded, keeping version "..tostring(loadedEditorVersion))
-			return
-		else
-			warn("a more recent version of "..uniqueId.." has been detected, overwriting version "..tostring(loadedEditorVersion))
-		end
-	end
-	
-	local filters = editorinfo.filters
-	
-	editorinfo.unique_id = nil -- redundancy
-	
-	editors[uniqueId] = {
-		info = editorinfo,
-		constructor = editorConstructor
-	}
-	
-	print("loaded editor "..uniqueId.." version "..tostring(version))
-end
-
-for _, editor in pairs(defaultEditorFolder:GetChildren()) do
-	loadEditorFromFolder(editor)
-end
-
---- LOAD EXTENSIONS
-
 local defaultExtensionFolder = root:WaitForChild("default_extensions")
 
 local function loadExtension(module)
@@ -204,15 +105,19 @@ local function loadExtension(module)
 	APIOperator:ExtendCustomBehaviours(behaviourExtensions or {})
 end
 
-for _, extension in pairs(defaultExtensionFolder:GetChildren()) do
-	loadExtension(extension)
-end
-
 --- WIDGET
 
 local tableRows = {}
 local nameCells = {}
 local editorCells = {}
+
+local function updateRowSize()
+	for _, tableRow in pairs(tableRows) do
+		tableRow.Size = UDim2.new(0, editorColumnWidth + nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
+		tableRow.PropertyName.Size = UDim2.new(0, nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
+		tableRow.Editor.Size = UDim2.new(0, editorColumnWidth, 0, PROPERTY_NAME_ROW_HEIGHT)
+	end
+end
 
 local widget = plugin:CreateDockWidgetPluginGui(widgetInfo.WIDGET_ID, widgetInfo.WIDGET_PLUGINGUI_INFO)
 widget.Archivable = false
@@ -239,16 +144,6 @@ propertiesListScrollingFrame.BorderColor3 = Color3.fromRGB(34, 34, 34)
 propertiesListScrollingFrame.BorderSizePixel = 1
 propertiesListScrollingFrame.ScrollBarThickness = 18
 propertiesListScrollingFrame.ClipsDescendants = true
-
-local propertiesListUITableLayout = Instance.new("UITableLayout")
-propertiesListUITableLayout.FillDirection = Enum.FillDirection.Vertical
-propertiesListUITableLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-propertiesListUITableLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-propertiesListUITableLayout.FillEmptySpaceColumns = false
-propertiesListUITableLayout.FillEmptySpaceRows = false
-propertiesListUITableLayout.MajorAxis = Enum.TableMajorAxis.RowMajor
-propertiesListUITableLayout.Padding = UDim2.new(0, 0, 0, 0)
-propertiesListUITableLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 local propertiesListUIListLayout = Instance.new("UIListLayout")
 propertiesListUIListLayout.FillDirection = Enum.FillDirection.Vertical
@@ -277,13 +172,14 @@ local function newPropertyRow(className, propertyName)
 
 	local row = Instance.new("Frame")
 	row.Name = normalName
-	row.Size = UDim2.new(0, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
+	row.Size = UDim2.new(0, editorColumnWidth + nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
 	row.BorderSizePixel = 0
+	row.BackgroundTransparency = 0
 
 	local propertyNameCell = Instance.new("Frame")
 	propertyNameCell.AnchorPoint = Vector2.new(0, 0.5)
 	propertyNameCell.Position = UDim2.new(0, 0, 0.5, 0)
-	propertyNameCell.Size = UDim2.new(0, PROPERTY_ROW_COLUMN_DEFAULT_WIDTH, 0, PROPERTY_NAME_ROW_HEIGHT)
+	propertyNameCell.Size = UDim2.new(0, nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
 	propertyNameCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 	propertyNameCell.BorderColor3 = Color3.fromRGB(34, 34, 34)
 	propertyNameCell.Name = "PropertyName"
@@ -291,7 +187,7 @@ local function newPropertyRow(className, propertyName)
 	local editorCell = Instance.new("Frame")
 	editorCell.AnchorPoint = Vector2.new(1, 0.5)
 	editorCell.Position = UDim2.new(1, 0, 0.5, 0)
-	editorCell.Size = UDim2.new(0, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
+	editorCell.Size = UDim2.new(0, editorColumnWidth, 0, PROPERTY_NAME_ROW_HEIGHT)
 	editorCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
 	editorCell.BorderColor3 = Color3.fromRGB(34, 34, 34)	
 	editorCell.Name = "Editor"
@@ -309,7 +205,6 @@ local function newPropertyRow(className, propertyName)
 	propertyNameLabel.BackgroundTransparency = 1
 	propertyNameLabel.BorderSizePixel = 0
 	propertyNameLabel.AutoButtonColor = false
-	propertyNameLabel.TextColor3 = (not isReadOnly) and Color3.new(1, 1, 1) or Color3.fromRGB(85, 85, 85)
 	propertyNameLabel.Font = Enum.Font.SourceSans
 	propertyNameLabel.TextSize = 14
 	propertyNameLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -354,66 +249,6 @@ local function newPropertyRow(className, propertyName)
 	return row
 end
 
---[[
--- why is this here
-local function collapsibleSection(sectionName, sizeCallback)
-	local isToggled = true
-	
-	local sectionFrame = Instance.new("Frame")
-	sectionFrame.BackgroundTransparency = 1
-	
-	local header = Instance.new("Frame")
-	header.Name = "Header"
-	header.AnchorPoint = Vector2.new(0.5, 0)
-	header.Size = UDim2.new(1, 0, 0, SECTION_HEADER_HEIGHT)
-	header.Position = UDim2.new(0.5, 0, 0, 0)
-	header.BackgroundColor3 = Color3.fromRGB(53, 53, 53)
-	header.BorderSizePixel = 0
-	
-	local headerToggle = Instance.new("TextButton")
-	headerToggle.Name = "Toggle"
-	headerToggle.AnchorPoint = Vector2.new(0, 0.5)
-	headerToggle.Size = UDim2.new(0, 24, 0, 24)
-	headerToggle.Position = UDim2.new(0, 0, 0.5, 0)
-	headerToggle.BackgroundTransparency = 1
-	headerToggle.Font = Enum.Font.SourceSansBold
-	headerToggle.TextSize = TEXT_TEXTSIZE
-	headerToggle.TextColor3 = Color3.new(1, 1, 1)
-	headerToggle.TextXAlignment = Enum.TextXAlignment.Center
-	headerToggle.TextYAlignment = Enum.TextYAlignment.Center
-	headerToggle.Text = "-"
-	
-	local headerText = Instance.new("TextLabel")
-	headerText.Name = "HeaderText"
-	headerText.AnchorPoint = Vector2.new(1, 0.5)
-	headerText.Size = UDim2.new(1, -24, 1, 0)
-	headerText.Position = UDim2.new(1, 0, 0.5, 0)
-	headerText.BackgroundTransparency = 1
-	headerText.Font = Enum.Font.SourceSansBold
-	headerText.TextSize = TEXT_TEXTSIZE
-	headerText.TextColor3 = Color3.new(1, 1, 1)
-	headerText.TextXAlignment = Enum.TextXAlignment.Left
-	headerText.TextYAlignment = Enum.TextYAlignment.Center
-	headerText.Text = sectionName
-	
-	local content = Instance.new("Frame")
-	content.Name = "Content"
-	content.AnchorPoint = Vector2.new(0.5, 1)
-	content.Size = UDim2.new(1, 0, 0, -SECTION_HEADER_HEIGHT)
-	content.Position = UDim2.new(0.5, 0, 1, 0)
-	
-	headerToggle.MouseButton1Click:Connect(function()
-		isToggled = (not isToggled)
-		
-		headerToggle.Text = isToggled and "-" or "+"
-		content.Visible = isToggled
-		sectionFrame.Size = isToggled and sizeCallback(sectionFrame) or UDim2.new(1, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
-	end)
-	
-	return sectionFrame
-end
---]]
-
 local function createCategoryContainer(categoryName)
 	if (categoryContainers[categoryName]) then return categoryContainers[categoryName] end
 	
@@ -449,7 +284,7 @@ local function createCategoryContainer(categoryName)
 	headerToggle.TextColor3 = Color3.new(1, 1, 1)
 	headerToggle.TextXAlignment = Enum.TextXAlignment.Center
 	headerToggle.TextYAlignment = Enum.TextYAlignment.Center
-	headerToggle.Text = "-"
+	headerToggle.Text = isToggled and "-" or "+"
 	
 	local headerText = Instance.new("TextLabel")
 	headerText.Name = "HeaderText"
@@ -472,24 +307,28 @@ local function createCategoryContainer(categoryName)
 	propertiesTableUI.BorderSizePixel = 0
 	propertiesTableUI.Visible = isToggled
 
-	local propertiesTableLayout = propertiesListUITableLayout:Clone()
+	local propertiesTableLayout = propertiesListUIListLayout:Clone()
 	propertiesTableLayout.Parent = propertiesTableUI
 	
 	headerToggle.MouseButton1Click:Connect(function()
 		isToggled = (not isToggled)
-		local tableSize = propertiesTableLayout.AbsoluteContentSize
 		
 		headerToggle.Text = isToggled and "-" or "+"
+
 		propertiesTableUI.Visible = isToggled
-		categoryFrame.Size = isToggled and UDim2.new(0, tableSize.X, 0, tableSize.Y + PROPERTY_NAME_ROW_HEIGHT) or UDim2.new(1, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
+
+		local tableSize = propertiesTableLayout.AbsoluteContentSize
+		propertiesTableUI.Size = isToggled and UDim2.new(1, 0, 0, tableSize.Y) or UDim2.new(0, 0, 0, 0)
 	end)
 	
+	propertiesTableUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		categoryFrame.Size = UDim2.new(1, 0, 0, propertiesTableUI.AbsoluteSize.Y + PROPERTY_NAME_ROW_HEIGHT)
+	end)
+
 	propertiesTableLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-		if (not isToggled) then return end
 		local tableSize = propertiesTableLayout.AbsoluteContentSize
 		
-		propertiesTableUI.Size = UDim2.new(0, tableSize.X, 0, tableSize.Y)
-		categoryFrame.Size = UDim2.new(0, tableSize.X, 0, tableSize.Y + PROPERTY_NAME_ROW_HEIGHT)
+		propertiesTableUI.Size = isToggled and UDim2.new(1, 0, 0, tableSize.Y) or UDim2.new(0, 0, 0, 0)
 	end)
 	
 	headerToggle.Parent = header
@@ -506,110 +345,18 @@ local function createCategoryContainer(categoryName)
 	return categoryContainers[categoryName]
 end
 
---[[
-local function createCategoryContainer(catName)
-	if (categoryContainers[catName]) then return categoryContainers[catName] end
-	
-	local isToggled = true
-	
-	local categoryFrame = Instance.new("Frame")
-	categoryFrame.Name = catName
-	categoryFrame.BackgroundTransparency = 1
-	
-	local header = Instance.new("Frame")
-	header.Name = "Header"
-	header.AnchorPoint = Vector2.new(0.5, 0)
-	header.Size = UDim2.new(1, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
-	header.Position = UDim2.new(0.5, 0, 0, 0)
-	header.BackgroundColor3 = Color3.fromRGB(53, 53, 53)
-	header.BorderSizePixel = 0
-	
-	local headerToggle = Instance.new("TextButton")
-	headerToggle.Name = "Toggle"
-	headerToggle.AnchorPoint = Vector2.new(0, 0.5)
-	headerToggle.Size = UDim2.new(0, 24, 0, 24)
-	headerToggle.Position = UDim2.new(0, 0, 0.5, 0)
-	headerToggle.BackgroundTransparency = 1
-	headerToggle.Font = Enum.Font.SourceSansBold
-	headerToggle.TextSize = TEXT_TEXTSIZE
-	headerToggle.TextColor3 = Color3.new(1, 1, 1)
-	headerToggle.TextXAlignment = Enum.TextXAlignment.Center
-	headerToggle.TextYAlignment = Enum.TextYAlignment.Center
-	headerToggle.Text = "-"
-	
-	local headerText = Instance.new("TextLabel")
-	headerText.Name = "HeaderText"
-	headerText.AnchorPoint = Vector2.new(1, 0.5)
-	headerText.Size = UDim2.new(1, -24, 1, 0)
-	headerText.Position = UDim2.new(1, 0, 0.5, 0)
-	headerText.BackgroundTransparency = 1
-	headerText.Font = Enum.Font.SourceSansBold
-	headerText.TextSize = TEXT_TEXTSIZE
-	headerText.TextColor3 = Color3.new(1, 1, 1)
-	headerText.TextXAlignment = Enum.TextXAlignment.Left
-	headerText.TextYAlignment = Enum.TextYAlignment.Center
-	headerText.Text = catName
-	
-	local propertiesTable = TableLayout.new({
-		Columns = { "PropertyName", "Editor" },
-		Sizes = {
-			Rows = {
-				[":DEFAULT"] = PROPERTY_NAME_ROW_HEIGHT,
-			},
-			Columns = {
-				["Editor"] = PROPERTY_EDITOR_COLUMN_WIDTH,
-			}
-		}
-	})
-	
-	propertiesTable:SetStyleCallback(function(cell)
-		cell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
-	--	cell.BorderColor3 = Color3.fromRGB(34, 34, 34)	
-		cell.BorderSizePixel = 0
-	end)
-	
-	local propertiesTableUI = propertiesTable.UIRoot
-	propertiesTableUI.Name = "PropertiesList"
-	propertiesTableUI.AnchorPoint = Vector2.new(0.5, 1)
-	propertiesTableUI.Position = UDim2.new(0.5, 0, 1, 0)
-	propertiesTableUI.BackgroundTransparency = 1
-	propertiesTableUI.BorderSizePixel = 0
-	
-	headerToggle.MouseButton1Click:Connect(function()
-		isToggled = (not isToggled)
-		local tableSize = propertiesTable:GetSize()
-		
-		headerToggle.Text = isToggled and "-" or "+"
-		propertiesTableUI.Visible = isToggled
-		categoryFrame.Size = isToggled and UDim2.new(0, tableSize.X, 0, tableSize.Y + PROPERTY_NAME_ROW_HEIGHT) or UDim2.new(0, tableSize.X, 0, PROPERTY_NAME_ROW_HEIGHT)
-	end)
-	
-	propertiesTableUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		if (not isToggled) then return end
-		local newSize = propertiesTableUI.AbsoluteSize
-		
-		categoryFrame.Size = UDim2.new(0, newSize.X, 0, newSize.Y + PROPERTY_NAME_ROW_HEIGHT)
-	end)
-	
-	categoryContainers[catName] = {
-		UI = categoryFrame,
-		Table = propertiesTable
-	}
-	
-	headerToggle.Parent = header
-	headerText.Parent = header
-	header.Parent = categoryFrame
-	propertiesTableUI.Parent = categoryFrame
-	categoryFrame.Parent = propertiesListScrollingFrame
-	
-	return categoryContainers[catName]
-end
---]]
+-- categories list
 
 propertiesListUIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	local contentSize = propertiesListUIListLayout.AbsoluteContentSize
 	
-	propertiesListScrollingFrame.CanvasSize = UDim2.new(0, contentSize.X, 0, contentSize.Y)
+	propertiesListScrollingFrame.CanvasSize = UDim2.new(0, editorColumnWidth + nameColumnWidth + 24 + 10, 0, contentSize.Y)
+end)
+
+widget:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+	editorColumnWidth = math.max(pluginSettings.Config.EditorColumnWidth, widget.AbsoluteSize.X - (nameColumnWidth + 24 + 10))
+
+	updateRowSize()
 end)
 
 ---
@@ -658,7 +405,6 @@ local function refreshPropertiesList(selection)
 			end
 		end
 	end
-	purgeDuplicates(selectionProperties)
 	
 	local categoriesWithNewRows = {}
 	for i = 1, #selectionProperties do
@@ -715,33 +461,40 @@ local function refreshPropertiesList(selection)
 		end
 	end
 	
-	editorColumnWidth = math.max(150, propertiesListScrollingFrame.AbsoluteSize.X - (nameColumnWidth + 24 + 10))
+	editorColumnWidth = math.max(150, widget.AbsoluteSize.X - (nameColumnWidth + 24 + 10))
+	updateRowSize()
+end
+
+-- SelectionChanged that doesn't spam that much
+-- https://devforum.roblox.com/t/weird-selectionchanged-behavior/22024/2
+-- Credit to Fractality
+
+local SelectionChanged do
+	local selectionChanged = Instance.new("BindableEvent")
+	local d0, d1 = true, true
 	
-	for _, tableRow in pairs(tableRows) do
-		tableRow.Size = UDim2.new(0, editorColumnWidth + nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
-		tableRow.PropertyName.Size = UDim2.new(0, nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
-		tableRow.Editor.Size = UDim2.new(0, editorColumnWidth, 0, PROPERTY_NAME_ROW_HEIGHT)
-	end
+	RunService.Heartbeat:Connect(function()
+		d0, d1 = true, true
+	end)
+	
+	Selection.SelectionChanged:Connect(function()
+		if d0 then
+			d0 = false
+			selectionChanged:Fire()
+		elseif d1 then
+			d1 = false
+			RunService.Heartbeat:Wait()
+			selectionChanged:Fire()
+		end
+	end)
+	
+	SelectionChanged = selectionChanged.Event
 end
 
 local selectionConnection
 selectionConnection = SelectionChanged:Connect(refreshPropertiesList)
---[[
-widget:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-	editorColumnWidth = math.max(150, propertiesListScrollingFrame.AbsoluteSize.X - (nameColumnWidth + 24 + 10))
-	
-	for _, category in pairs(categoryContainers) do
-		local categoryTable = category.Table
-		local categoryFrame = category.UI
-		local tableSize = categoryTable:GetSize()
-		
-		categoryTable:SetColumnWidth("Editor", editorColumnWidth)
-		categoryFrame.Size = UDim2.new(0, tableSize.X, categoryFrame.Size.Y.Scale, categoryFrame.Size.Y.Offset)
-	end
-end)
---]]
 
---- PRELOAD
+--- PRELOAD API
 
 do
 	local classes
@@ -798,6 +551,12 @@ do
 			end
 		end
 	end
+end
+
+--- LOAD EXTENSIONS
+
+for _, extension in pairs(defaultExtensionFolder:GetChildren()) do
+	loadExtension(extension)
 end
 
 --- SETTINGS 
