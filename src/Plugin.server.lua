@@ -11,6 +11,7 @@ local root = script.Parent
 local includes = root:WaitForChild("includes")
 
 local RobloxAPI = require(includes:WaitForChild("RobloxAPI"):WaitForChild("API"))
+local Themer = require(includes:WaitForChild("Themer"))
 
 local PROPERTY_ROW_COLUMN_DEFAULT_WIDTH = 150
 local SECTION_HEADER_HEIGHT = 26
@@ -67,16 +68,6 @@ local editors = {}
 local editorFilters = {}
 local editorPreferences = {}
 
-local categoryContainers = {}
-local nameColumnWidth = 0
-local editorColumnWidth = 0
-
-local widgetInfo = {
-	WIDGET_ID = "PropertiesMod",
-	WIDGET_DEFAULT_TITLE = "Properties",
-	WIDGET_PLUGINGUI_INFO = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 268, 400, 270, 250)
-}
-
 local toolbar = plugin:CreateToolbar("PropertiesMod")
 local configButton = toolbar:CreateButton("Settings", "Configure PropertiesMod and its editors (uses a viewport UI)", "")
 
@@ -111,6 +102,10 @@ local tableRows = {}
 local nameCells = {}
 local editorCells = {}
 
+local categoryContainers = {}
+local nameColumnWidth = 0
+local editorColumnWidth = 0
+
 local function updateRowSize()
 	for _, tableRow in pairs(tableRows) do
 		tableRow.Size = UDim2.new(0, editorColumnWidth + nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
@@ -118,6 +113,19 @@ local function updateRowSize()
 		tableRow.Editor.Size = UDim2.new(0, editorColumnWidth, 0, PROPERTY_NAME_ROW_HEIGHT)
 	end
 end
+
+local widgetInfo = {
+	WIDGET_ID = "PropertiesMod",
+	WIDGET_DEFAULT_TITLE = "Properties",
+	WIDGET_PLUGINGUI_INFO = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 268, 400, 270, 250)
+}
+
+local WIDGET_INFO = widgetInfo
+
+local RIGHT_ARROW_IMAGE = "rbxassetid://367872391"
+local DOWN_ARROW_IMAGE = "rbxassetid://913309373"
+
+local DOUBLE_CLICK_TIME = 0.5
 
 local widget = plugin:CreateDockWidgetPluginGui(widgetInfo.WIDGET_ID, widgetInfo.WIDGET_PLUGINGUI_INFO)
 widget.Archivable = false
@@ -132,18 +140,24 @@ propertiesListScrollingFrame.Size = UDim2.new(1, 0, 1, -2)
 propertiesListScrollingFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 propertiesListScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 propertiesListScrollingFrame.CanvasPosition = Vector2.new(0, 0)
-propertiesListScrollingFrame.HorizontalScrollBarInset = Enum.ScrollBarInset.ScrollBar
-propertiesListScrollingFrame.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
+propertiesListScrollingFrame.HorizontalScrollBarInset = Enum.ScrollBarInset.Always
+propertiesListScrollingFrame.VerticalScrollBarInset = Enum.ScrollBarInset.Always
 propertiesListScrollingFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Right
-propertiesListScrollingFrame.TopImage = "rbxassetid://2060768460"
-propertiesListScrollingFrame.MidImage = "rbxassetid://2060767807"
-propertiesListScrollingFrame.BottomImage = "rbxassetid://2060770132"
-propertiesListScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(34, 34, 34)
-propertiesListScrollingFrame.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+propertiesListScrollingFrame.TopImage = "rbxassetid://590077572"
+propertiesListScrollingFrame.MidImage = "rbxassetid://590077572"
+propertiesListScrollingFrame.BottomImage = "rbxassetid://590077572"
+propertiesListScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(56, 56, 56)
+propertiesListScrollingFrame.BackgroundColor3 = Color3.fromRGB(41, 41, 41)
 propertiesListScrollingFrame.BorderColor3 = Color3.fromRGB(34, 34, 34)
 propertiesListScrollingFrame.BorderSizePixel = 1
-propertiesListScrollingFrame.ScrollBarThickness = 18
+propertiesListScrollingFrame.ScrollBarThickness = 16
 propertiesListScrollingFrame.ClipsDescendants = true
+
+Themer.SyncProperties(propertiesListScrollingFrame, {
+	ScrollBarImageColor3 = Enum.StudioStyleGuideColor.ScrollBar,
+	BackgroundColor3 = Enum.StudioStyleGuideColor.Mid,
+	BorderColor3 = Enum.StudioStyleGuideColor.Border,
+})
 
 local propertiesListUIListLayout = Instance.new("UIListLayout")
 propertiesListUIListLayout.FillDirection = Enum.FillDirection.Vertical
@@ -174,23 +188,29 @@ local function newPropertyRow(className, propertyName)
 	row.Name = normalName
 	row.Size = UDim2.new(0, editorColumnWidth + nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
 	row.BorderSizePixel = 0
-	row.BackgroundTransparency = 0
+	row.BackgroundTransparency = 1
 
 	local propertyNameCell = Instance.new("Frame")
 	propertyNameCell.AnchorPoint = Vector2.new(0, 0.5)
 	propertyNameCell.Position = UDim2.new(0, 0, 0.5, 0)
 	propertyNameCell.Size = UDim2.new(0, nameColumnWidth + 24 + 10, 0, PROPERTY_NAME_ROW_HEIGHT)
-	propertyNameCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
-	propertyNameCell.BorderColor3 = Color3.fromRGB(34, 34, 34)
 	propertyNameCell.Name = "PropertyName"
+
+	Themer.SyncProperties(propertyNameCell, {
+		BackgroundColor3 = Enum.StudioStyleGuideColor.TableItem,
+		BorderColor3 = Enum.StudioStyleGuideColor.Border
+	})
 
 	local editorCell = Instance.new("Frame")
 	editorCell.AnchorPoint = Vector2.new(1, 0.5)
 	editorCell.Position = UDim2.new(1, 0, 0.5, 0)
 	editorCell.Size = UDim2.new(0, editorColumnWidth, 0, PROPERTY_NAME_ROW_HEIGHT)
-	editorCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
-	editorCell.BorderColor3 = Color3.fromRGB(34, 34, 34)	
 	editorCell.Name = "Editor"
+
+	Themer.SyncProperties(editorCell, {
+		BackgroundColor3 = Enum.StudioStyleGuideColor.TableItem,
+		BorderColor3 = Enum.StudioStyleGuideColor.Border
+	})
 
 	-- populate
 
@@ -212,9 +232,9 @@ local function newPropertyRow(className, propertyName)
 	propertyNameLabel.Text = propertyName
 
 	if isInaccessible then
-		propertyNameLabel.TextColor3 = Color3.fromRGB(100, 80, 80)
+		Themer.SyncProperty(propertyNameLabel, "TextColor3", Enum.StudioStyleGuideColor.ErrorText)
 	else
-		propertyNameLabel.TextColor3 = (not isReadOnly) and Color3.new(1, 1, 1) or Color3.fromRGB(85, 85, 85)
+		Themer.SyncProperty(propertyNameLabel, "TextColor3", {Enum.StudioStyleGuideColor.MainText, isReadOnly and Enum.StudioStyleGuideModifier.Disabled or Enum.StudioStyleGuideModifier.Default})
 	end
 	
 	propertyNameLabel.MouseButton2Click:Connect(function()
@@ -230,13 +250,13 @@ local function newPropertyRow(className, propertyName)
 	propertyNameCell.MouseEnter:Connect(function()
 		if (isReadOnly or isInaccessible) then return end
 
-		propertyNameCell.BackgroundColor3 = Color3.fromRGB(66, 66, 66)
+		Themer.SyncProperty(propertyNameCell, "BackgroundColor3", {Enum.StudioStyleGuideColor.TableItem, Enum.StudioStyleGuideModifier.Hover})
 	end)
 	
 	propertyNameCell.MouseLeave:Connect(function()
 		if (isReadOnly or isInaccessible) then return end
 
-		propertyNameCell.BackgroundColor3 = Color3.fromRGB(46, 46, 46)
+		Themer.SyncProperty(propertyNameCell, "BackgroundColor3", Enum.StudioStyleGuideColor.TableItem)
 	end)
 	
 	propertyNameLabel.Parent = propertyNameCell
@@ -269,35 +289,34 @@ local function createCategoryContainer(categoryName)
 	header.AnchorPoint = Vector2.new(0.5, 0)
 	header.Size = UDim2.new(1, 0, 0, PROPERTY_NAME_ROW_HEIGHT)
 	header.Position = UDim2.new(0.5, 0, 0, 0)
-	header.BackgroundColor3 = Color3.fromRGB(53, 53, 53)
 	header.BorderSizePixel = 0
+
+	Themer.SyncProperty(header, "BackgroundColor3", Enum.StudioStyleGuideColor.MainBackground)
 	
-	-- todo: make this an ImageButton
-	local headerToggle = Instance.new("TextButton")
+	local headerToggle = Instance.new("ImageButton")
 	headerToggle.Name = "Toggle"
 	headerToggle.AnchorPoint = Vector2.new(0, 0.5)
 	headerToggle.Size = UDim2.new(0, 24, 0, 24)
 	headerToggle.Position = UDim2.new(0, 0, 0.5, 0)
 	headerToggle.BackgroundTransparency = 1
-	headerToggle.Font = Enum.Font.SourceSansBold
-	headerToggle.TextSize = TEXT_TEXTSIZE
-	headerToggle.TextColor3 = Color3.new(1, 1, 1)
-	headerToggle.TextXAlignment = Enum.TextXAlignment.Center
-	headerToggle.TextYAlignment = Enum.TextYAlignment.Center
-	headerToggle.Text = isToggled and "-" or "+"
+	headerToggle.Image = isToggled and RIGHT_ARROW_IMAGE or DOWN_ARROW_IMAGE
+
+	Themer.SyncProperty(headerToggle, "ImageColor3", Enum.StudioStyleGuideColor.ButtonText)
 	
-	local headerText = Instance.new("TextLabel")
+	local headerText = Instance.new("TextButton")
 	headerText.Name = "HeaderText"
 	headerText.AnchorPoint = Vector2.new(1, 0.5)
 	headerText.Size = UDim2.new(1, -24, 1, 0)
 	headerText.Position = UDim2.new(1, 0, 0.5, 0)
+	headerText.AutoButtonColor = false
 	headerText.BackgroundTransparency = 1
 	headerText.Font = Enum.Font.SourceSansBold
 	headerText.TextSize = TEXT_TEXTSIZE
-	headerText.TextColor3 = Color3.new(1, 1, 1)
 	headerText.TextXAlignment = Enum.TextXAlignment.Left
 	headerText.TextYAlignment = Enum.TextYAlignment.Center
 	headerText.Text = categoryName
+
+	Themer.SyncProperty(headerText, "TextColor3", Enum.StudioStyleGuideColor.BrightText)
 	
 	local propertiesTableUI = Instance.new("Frame")
 	propertiesTableUI.Name = "PropertiesList"
@@ -309,16 +328,31 @@ local function createCategoryContainer(categoryName)
 
 	local propertiesTableLayout = propertiesListUIListLayout:Clone()
 	propertiesTableLayout.Parent = propertiesTableUI
-	
-	headerToggle.MouseButton1Click:Connect(function()
+
+	local function toggle()
 		isToggled = (not isToggled)
 		
-		headerToggle.Text = isToggled and "-" or "+"
+		headerToggle.Image = isToggled and RIGHT_ARROW_IMAGE or DOWN_ARROW_IMAGE
 
 		propertiesTableUI.Visible = isToggled
 
 		local tableSize = propertiesTableLayout.AbsoluteContentSize
 		propertiesTableUI.Size = isToggled and UDim2.new(1, 0, 0, tableSize.Y) or UDim2.new(0, 0, 0, 0)
+	end
+	
+	headerToggle.MouseButton1Click:Connect(toggle)
+
+	local lastClickTime = 0
+	headerText.MouseButton1Down:Connect(function()
+		local now = tick()
+
+		if ((now - lastClickTime) < DOUBLE_CLICK_TIME) then 
+			toggle()
+			
+			lastClickTime = 0
+		else
+			lastClickTime = now
+		end
 	end)
 	
 	propertiesTableUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
