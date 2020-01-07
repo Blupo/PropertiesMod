@@ -1,0 +1,3 @@
+[submodule "src/includes/RobloxAPI"]
+	path = src/includes/RobloxAPI
+	url = https://github.com/Blupo/RobloxAPI
