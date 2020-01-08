@@ -25,21 +25,21 @@ local t = require(includes:FindFirstChild("t"))
 
 local DEFAULT_SETTINGS = {
     Config = {
-		ShowInaccessibleProperties = false,
-		ShowDeprecatedProperties = false,
+        ShowInaccessibleProperties = false,
+        ShowDeprecatedProperties = false,
 
-		PreloadClasses = "Common",
-		-- Common, All, or None,
+        PreloadClasses = "Common",
+        -- Common, All, or None,
 
-		EditorColumnWidth = 200,
-		RowHeight = 26,
+        EditorColumnWidth = 200,
+        RowHeight = 26,
 
-		TextSize = 14,
-	},
+        TextSize = 14,
+    },
 
-	FilterPreferences = {},
-	PropertyCategoryOverrides = {},
-	CategoryStateMemory = {},
+    FilterPreferences = {},
+    PropertyCategoryOverrides = {},
+    CategoryStateMemory = {},
 }
 
 local EDITOR_LIB = {
@@ -80,52 +80,52 @@ local pluginSettings = plugin:GetSetting("PropertiesMod") and HttpService:JSONDe
 -- Credit to Fractality
 
 local SelectionChanged do
-	local selectionChanged = Instance.new("BindableEvent")
-	local d0, d1 = true, true
+    local selectionChanged = Instance.new("BindableEvent")
+    local d0, d1 = true, true
 
-	RunService.Heartbeat:Connect(function()
-		d0, d1 = true, true
-	end)
+    RunService.Heartbeat:Connect(function()
+        d0, d1 = true, true
+    end)
 
-	Selection.SelectionChanged:Connect(function()
-		if d0 then
-			d0 = false
-			selectionChanged:Fire()
-		elseif d1 then
-			d1 = false
-			RunService.Heartbeat:Wait()
-			selectionChanged:Fire()
-		end
-	end)
+    Selection.SelectionChanged:Connect(function()
+        if d0 then
+            d0 = false
+            selectionChanged:Fire()
+        elseif d1 then
+            d1 = false
+            RunService.Heartbeat:Wait()
+            selectionChanged:Fire()
+        end
+    end)
 
-	SelectionChanged = selectionChanged.Event
+    SelectionChanged = selectionChanged.Event
 end
 
 ---
 
 local function purgeDuplicates(tab)
-	if (#tab <= 1) then return end
-	local x = 1
+    if (#tab <= 1) then return end
+    local x = 1
 
-	repeat
-		for i = #tab, x + 1, -1 do
-			if (tab[i] == tab[x]) then
-				table.remove(tab, i)
-			end
-		end
+    repeat
+        for i = #tab, x + 1, -1 do
+            if (tab[i] == tab[x]) then
+                table.remove(tab, i)
+            end
+        end
 
-		x = x + 1
-	until (x >= #tab)
+        x = x + 1
+    until (x >= #tab)
 end
 
 local function loadExtension(module)
-	local extension = require(module)
+    local extension = require(module)
 
-	local apiExtensions = extension.API
-	local behaviourExtensions = extension.Behaviours
+    local apiExtensions = extension.API
+    local behaviourExtensions = extension.Behaviours
 
-	APIData:Extend(apiExtensions or {})
-	APIOperator:ExtendCustomBehaviours(behaviourExtensions or {})
+    APIData:Extend(apiExtensions or {})
+    APIOperator:ExtendCustomBehaviours(behaviourExtensions or {})
 end
 
 local function getPropertyType(className, propertyName)
@@ -383,11 +383,11 @@ end)
 ---
 
 if (not pluginSettings.Config.ShowInaccessibleProperties) then
-	APIData:RemoveInaccessibleMembers()
+    APIData:RemoveInaccessibleMembers()
 end
 
 if (not pluginSettings.Config.ShowDeprecatedProperties) then
-	APIData:RemoveDeprecatedMembers()
+    APIData:RemoveDeprecatedMembers()
 end
 
 for _, extension in pairs(defaultExtensions:GetChildren()) do
@@ -438,18 +438,18 @@ end
 -- Preload Classes
 
 do
-	local classes
+    local classes
 
-	if (pluginSettings.Config.PreloadClasses == "All") then
-		classes = APIData.Classes
-	elseif (pluginSettings.Config.PreloadClasses == "Common") then
-		classes = require(includes:WaitForChild("CommonClasses"))
+    if (pluginSettings.Config.PreloadClasses == "All") then
+        classes = APIData.Classes
+    elseif (pluginSettings.Config.PreloadClasses == "Common") then
+        classes = require(includes:WaitForChild("CommonClasses"))
     end
 
 --  local rowsToAdd = {}
     if classes then
         for className in pairs(classes) do
-			local properties = APILib:GetImmediateProperties(className)
+            local properties = APILib:GetImmediateProperties(className)
 
             for i = 1, #properties do
                 local propertyName = properties[i]
