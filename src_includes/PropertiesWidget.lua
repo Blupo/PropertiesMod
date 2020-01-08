@@ -1,6 +1,6 @@
 local includes = script.Parent
 
-local RobloxAPI = require(includes:WaitForChild("RobloxAPI"):WaitForChild("API"))
+local RobloxAPI = require(includes:WaitForChild("RobloxAPI"))
 local Themer = require(includes:WaitForChild("Themer"))
 
 ---

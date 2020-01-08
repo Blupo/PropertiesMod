@@ -1,25 +1,17 @@
 {
   "name": "PropertiesMod",
   "tree": {
-    "$className": "DataModel",
+    "$path": "src",
 
-    "ServerScriptService": {
-      "$className": "ServerScriptService",
+    "includes": {
+      "$path": "src_includes",
 
-      "Plugin": {
-        "$className": "Folder",
+      "RobloxAPI": {
+        "$path": "includes/RobloxAPI/lib"
+      },
 
-        "PropertiesMod": {
-          "$path": "src"
-        },
-    
-        "RobloxAPI": {
-          "$path": "includes/RobloxAPI"
-        },
-
-        "t": {
-          "$path": "includes/t/lib"
-        }
+      "t": {
+        "$path": "includes/t/lib"
       }
     }
   }

@@ -15,7 +15,7 @@ local includes = root:WaitForChild("includes")
 local defaultEditors = root:WaitForChild("default_editors")
 local defaultExtensions = root:WaitForChild("default_extensions")
 
-local RobloxAPI = require(includes:WaitForChild("RobloxAPI"):WaitForChild("API"))
+local RobloxAPI = require(includes:WaitForChild("RobloxAPI"))
 local EditorUtilities = require(includes:WaitForChild("EditorUtilities"))
 local Widget = require(includes:WaitForChild("PropertiesWidget"))
 local Themer = require(includes:WaitForChild("Themer"))
