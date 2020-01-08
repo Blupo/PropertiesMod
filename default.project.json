@@ -2,42 +2,24 @@
   "name": "PropertiesMod",
   "tree": {
     "$className": "DataModel",
-    "HttpService": {
-      "$className": "HttpService",
-      "$properties": {
-        "HttpEnabled": true
-      }
-    },
-    "Lighting": {
-      "$className": "Lighting",
-      "$properties": {
-        "Ambient": [
-          0.0,
-          0.0,
-          0.0
-        ],
-        "Technology": "Voxel",
-        "GlobalShadows": true,
-        "Outlines": false,
-        "Brightness": 2.0
-      }
-    },
+
     "ServerScriptService": {
       "$className": "ServerScriptService",
-      "Source": {
-        "$path": "src"
-      }
-    },
-    "SoundService": {
-      "$className": "SoundService",
-      "$properties": {
-        "RespectFilteringEnabled": true
-      }
-    },
-    "Workspace": {
-      "$className": "Workspace",
-      "$properties": {
-        "FilteringEnabled": true
+
+      "Plugin": {
+        "$className": "Folder",
+
+        "PropertiesMod": {
+          "$path": "src"
+        },
+    
+        "RobloxAPI": {
+          "$path": "includes/RobloxAPI"
+        },
+
+        "t": {
+          "$path": "includes/t/lib"
+        }
       }
     }
   }

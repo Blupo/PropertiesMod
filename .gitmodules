@@ -1,3 +1,6 @@
 [submodule "src/includes/RobloxAPI"]
-	path = src/includes/RobloxAPI
+	path = includes/RobloxAPI
 	url = https://github.com/Blupo/RobloxAPI
+[submodule "includes/t"]
+	path = includes/t
+	url = https://github.com/osyrisrblx/t
