@@ -55,7 +55,7 @@ local function isPropertyInaccessible(className, propertyName)
 end
 
 local function getEditorColumnWidth()
-    return math.max(150, widget.AbsoluteSize.X - propertyNameColumnWidth)
+    return math.max(Settings.Config.RowHeight, widget.AbsoluteSize.X - propertyNameColumnWidth)
 end
 
 local function getListWidth()
@@ -355,7 +355,7 @@ function Widget.Unload()
     Settings = nil
     APILib = nil
     APIData = nil
-    pluginObj = nil
+    plugin = nil
 end
 
 function Widget.ResetRowVisibility()
