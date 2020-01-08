@@ -30,7 +30,7 @@ Themer.SyncProperties = t.wrap(function(object, properties)
             properties[propertyName] = {colorSpecifier, Enum.StudioStyleGuideModifier.Default}
             colorSpecifier = properties[propertyName]
         end
-        
+
         object[propertyName] = Studio.Theme:GetColor(colorSpecifier[1], colorSpecifier[2])
     end
 
@@ -58,7 +58,7 @@ Themer.SyncProperty = t.wrap(function(object, property, colorSpecifier)
     else
         syncedObjects[object][property] = colorSpecifier
     end
-    
+
     object[property] = Studio.Theme:GetColor(colorSpecifier[1], colorSpecifier[2])
 end, t.tuple(t.Instance, t.string, colorSpecifierInterface))
 

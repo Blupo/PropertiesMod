@@ -17,9 +17,7 @@ return function(main, lib, propertyData)
     })
 
     main.PropertyValueUpdated:Connect(function(newValue)
-        newValue = tostring(newValue) or ""
-
-        textLabel.Text = newValue
+        textLabel.Text = (type(newValue) ~= "nil") and tostring(newValue) or ""
     end)
 
     textLabel.Parent = main.Display

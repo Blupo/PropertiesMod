@@ -1,8 +1,8 @@
+local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Selection = game:GetService("Selection")
-local CoreGui = game:GetService("CoreGui")
 
 if (not RunService:IsStudio()) then warn("PropertiesMod only works in Studio") return end
 if RunService:IsRunMode() then warn("PropertiesMod only works in Edit mode") return end
@@ -19,6 +19,7 @@ local RobloxAPI = require(includes:WaitForChild("RobloxAPI"))
 local EditorUtilities = require(includes:WaitForChild("EditorUtilities"))
 local Widget = require(includes:WaitForChild("PropertiesWidget"))
 local Themer = require(includes:WaitForChild("Themer"))
+local t = require(includes:FindFirstChild("t"))
 
 ---
 
@@ -30,12 +31,12 @@ local DEFAULT_SETTINGS = {
 		PreloadClasses = "Common",
 		-- Common, All, or None,
 
-		EditorColumnWidth = 150,
+		EditorColumnWidth = 200,
 		RowHeight = 26,
 
 		TextSize = 14,
 	},
-	
+
 	FilterPreferences = {},
 	PropertyCategoryOverrides = {},
 	CategoryStateMemory = {},
@@ -43,6 +44,22 @@ local DEFAULT_SETTINGS = {
 
 local EDITOR_LIB = {
     Themer = Themer,
+}
+
+local PRIMITIVES_MAP = {
+    bool = "boolean",
+    float = "number",
+    double = "number",
+    int64 = "integer",
+    int = "integer",
+}
+
+local T_MAP = {
+    bool = "boolean",
+    float = "number",
+    double = "number",
+    int64 = "integer",
+    int = "integer"
 }
 
 local API = RobloxAPI.new(true)
@@ -53,7 +70,8 @@ local APIOperator = API.Operator
 local editors = {
     ["*"] = EditorUtilities.CompileEditor(defaultEditors:WaitForChild("fallback"))
 }
-local editorMains = {}
+
+local cachedPluginObjects = {}
 
 local pluginSettings = plugin:GetSetting("PropertiesMod") and HttpService:JSONDecode(plugin:GetSetting("PropertiesMod")) or DEFAULT_SETTINGS
 
@@ -64,11 +82,11 @@ local pluginSettings = plugin:GetSetting("PropertiesMod") and HttpService:JSONDe
 local SelectionChanged do
 	local selectionChanged = Instance.new("BindableEvent")
 	local d0, d1 = true, true
-	
+
 	RunService.Heartbeat:Connect(function()
 		d0, d1 = true, true
 	end)
-	
+
 	Selection.SelectionChanged:Connect(function()
 		if d0 then
 			d0 = false
@@ -79,7 +97,7 @@ local SelectionChanged do
 			selectionChanged:Fire()
 		end
 	end)
-	
+
 	SelectionChanged = selectionChanged.Event
 end
 
@@ -110,93 +128,198 @@ local function loadExtension(module)
 	APIOperator:ExtendCustomBehaviours(behaviourExtensions or {})
 end
 
-local function getEditor(className, propertyName)
+local function getPropertyType(className, propertyName)
     local propertyData = APIData.Classes[className].Properties[propertyName]
+    local propertyValueType = propertyData.ValueType
 
-    return editors["property:" .. Widget.GetPropertyNormalName(className, propertyName)] or editors["*"]
+    local category = propertyValueType.Category
+    local name = propertyValueType.Name
+
+    if (category == "Primitive") then
+        local primitiveNormalName = PRIMITIVES_MAP[name] and PRIMITIVES_MAP[name] or name
+
+        return "primitive:" .. primitiveNormalName
+    elseif (category == "DataType") then
+        return "roblox:" .. name
+    elseif (category == "Enum") then
+        return "enum"
+    end
+
+    return "*"
+end
+
+local function getEditor(className, propertyName)
+    return editors["property:" .. Widget.GetPropertyNormalName(className, propertyName)] or
+        editors[getPropertyType(className, propertyName)] or
+        editors["*"]
+end
+
+local function getSafeSelection()
+    local selection = Selection:Get()
+    local filteredSelection = {}
+
+    for i = 1, #selection do
+        local obj = selection[i]
+
+        local success, isValidClassName = pcall(function()
+            -- 1. Query one of the object's properties to see if it passes the security check
+            -- 2. Check the class name to make sure it isn't blank (because that's a thing I guess)
+
+            return (obj.ClassName ~= "")
+        end)
+
+        if (success and isValidClassName) then
+            filteredSelection[#filteredSelection + 1] = obj
+        end
+    end
+
+    return filteredSelection
 end
 
 local function loadEditor(className, propertyName)
     local editor = getEditor(className, propertyName)
     if (not editor) then return end
 
+    local uniqueId = editor.EditorInfo.UniqueId
     local normalName = Widget.GetPropertyNormalName(className, propertyName)
     local propertyData = APIData.Classes[className].Properties[propertyName]
 
-    local propertyValueChangedConnections = {}
+--  local propertyValueChangedConnections = {}
     local propertyValueUpdatedEvent = Instance.new("BindableEvent")
 
     local function getHomogeneousValue()
-        local selection = Selection:Get()
+        local selection = getSafeSelection()
+        if (#selection <= 0) then return end
+
         local filteredSelection = {}
-        
+
         for i = 1, #selection do
             local obj = selection[i]
-            
+
             if obj:IsA(className) then
                 filteredSelection[#filteredSelection + 1] = obj
             end
         end
-        
-        if (#filteredSelection == 0) then
+
+        if (#filteredSelection <= 0) then
             return
         elseif (#filteredSelection == 1) then
-            return filteredSelection[1][propertyName]
+            return APIOperator:GetProperty(filteredSelection[1], propertyName, className)
         end
-        
-        local control = filteredSelection[1][propertyName]
+
+        local control = APIOperator:GetProperty(filteredSelection[1], propertyName, className)
         for i = 1, #filteredSelection do
             local obj = filteredSelection[i]
-            if (obj[propertyName] ~= control) then return end
+
+            if (APIOperator:GetProperty(obj, propertyName, className) ~= control) then return end
         end
-        
+
         return control
     end
-    
-    local function setSelectionProperty(value)
-        local selection = Selection:Get()
+
+    local updatingMode = "write"
+    local function setSelectionPropertyCallback(value)
+        if (updatingMode == "no_updates") then return end
+
+        local selection = getSafeSelection()
+
+        if (updatingMode == "write") then
+            ChangeHistoryService:SetWaypoint("PropertiesMod.BeforeSet:" .. normalName)
+        end
 
         for i = 1, #selection do
             local obj = selection[i]
-            
-            if obj:IsA(class) then
+
+            if obj:IsA(className) then
                 obj[propertyName] = value
             end
+        end
+
+        if (updatingMode == "write") then
+            ChangeHistoryService:SetWaypoint("PropertiesMod.AfterSet:" .. normalName)
+        end
+
+        propertyValueUpdatedEvent:Fire(getHomogeneousValue())
+    end
+
+    local setSelectionProperty
+    do
+    --  local propertyData = APIData.Classes[className].Properties[propertyName]
+        local propertyValueType = propertyData.ValueType
+
+        local category = propertyValueType.Category
+        local name = propertyValueType.Name
+
+        if (category == "Primitive") then
+            setSelectionProperty = t.wrap(setSelectionPropertyCallback, T_MAP[name] and t[T_MAP[name]] or t[name])
+        elseif (category == "DataType") then
+            setSelectionProperty = t.wrap(
+                setSelectionPropertyCallback,
+                (name ~= "Content") and t[name] or t.string
+            )
+        elseif (category == "Enum") then
+            setSelectionProperty = t.wrap(setSelectionPropertyCallback, t.enum(Enum[name]))
         end
     end
 
     local selectionChanged = SelectionChanged:Connect(function()
+    --[[
         local selection = Selection:Get()
-        
+
         for i = 1, #propertyValueChangedConnections do
             propertyValueChangedConnections[i]:Disconnect()
         end
         propertyValueChangedConnections = {}
-        
+
         for i = 1, #selection do
             local obj = selection[i]
-                
+
             if obj:IsA(className) then
                 propertyValueChangedConnections[#propertyValueChangedConnections + 1] = obj:GetPropertyChangedSignal(propertyName):Connect(function()
                     propertyValueUpdatedEvent:Fire(getHomogeneousValue())
                 end)
             end
         end
-        
+    --]]
+
         propertyValueUpdatedEvent:Fire(getHomogeneousValue())
     end)
 
     local main = {
         Display = Widget.PropertyRows[normalName]:FindFirstChild("Editor"),
 
-        PropertyValueUpdated = propertyValueUpdatedEvent.Event,
+        CreateDockWidgetPluginGui = function(dockWidgetPluginGuiInfo)
+            local pluginGuiName = "PropertiesMod.PluginGuis:" .. uniqueId
 
+            local cachedPluginGui = cachedPluginObjects[pluginGuiName]
+
+            if (not cachedPluginGui) then
+                cachedPluginObjects[pluginGuiName] = plugin:CreateDockWidgetPluginGui(pluginGuiName, dockWidgetPluginGuiInfo)
+                return cachedPluginObjects[pluginGuiName]
+            else
+                return cachedPluginGui
+            end
+        end,
+        CreatePluginAction = function(...) return plugin:CreatePluginAction(...) end,
+        CreatePluginMenu = function(...) return plugin:CreatePluginMenu(...) end,
+
+        Update = setSelectionProperty,
+
+        GetUpdatingMode = function() return updatingMode end,
+        SetUpdatingMode = function(newUpdatingMode)
+            if ((newUpdatingMode == "write") or (newUpdatingMode == "preview") or (newUpdatingMode == "no_updates")) then
+                updatingMode = newUpdatingMode
+            end
+        end,
+
+        PropertyValueUpdated = propertyValueUpdatedEvent.Event,
         _PropertyValueUpdatedEvent = propertyValueUpdatedEvent,
+
         _SelectionChangedEvent = selectionChanged,
     }
 
     editor.Constructor(main, EDITOR_LIB, propertyData)
-    editorMains[normalName] = main
+    propertyValueUpdatedEvent:Fire(getHomogeneousValue())
 end
 
 local function selectionChanged()
@@ -204,46 +327,36 @@ local function selectionChanged()
     Widget.ResetCategoryVisibility()
     Widget.ResetRowVisibility()
 
-    local selection = Selection:Get()
-    if (#selection < 1) then return end
-    
+    local selection = getSafeSelection()
+    if (#selection <= 0) then return end
+
     local newColumnWidth = 0
-    local rowsToAdd = {}
+--  local rowsToAdd = {}
 
     -- deal with performance issues later
     for i = 1, #selection do
-		local obj = selection[i]
-		
-		local success, isValidClassName = pcall(function()
-            -- 1. Query one of the object's properties to see if we can access it
-            -- 2. Check the class name to make sure it isn't blank (because that's a thing I guess)
+        local obj = selection[i]
+        local properties = APILib:GetProperties(obj.ClassName)
 
-            return (obj.ClassName ~= "")
-        end)
-        
-        if (success and isValidClassName) then
-            local properties = APILib:GetProperties(obj.ClassName)
-            
-            for className, classProperties in pairs(properties) do
-                for j = 1, #classProperties do
-                    local propertyName = classProperties[j]
-                    local propertyCategory = APIData.Classes[className].Properties[propertyName].Category
-                    local normalName = Widget.GetPropertyNormalName(className, propertyName)
+        for className, classProperties in pairs(properties) do
+            for j = 1, #classProperties do
+                local propertyName = classProperties[j]
+                local propertyCategory = APIData.Classes[className].Properties[propertyName].Category
+                local normalName = Widget.GetPropertyNormalName(className, propertyName)
 
-                    local textWidth = TextService:GetTextSize(propertyName, pluginSettings.Config.TextSize, Enum.Font.SourceSans, Vector2.new()).X
-                    if (textWidth > newColumnWidth) then newColumnWidth = textWidth end
-                    
-                    if Widget.PropertyRows[normalName] then
-                        Widget.SetRowVisibility(normalName, true)
-                    else
-                        Widget.AddRow(className, propertyName, true)
-                    --  rowsToAdd[#rowsToAdd + 1] = {className, propertyName, true}
+                local textWidth = TextService:GetTextSize(propertyName, pluginSettings.Config.TextSize, Enum.Font.SourceSans, Vector2.new()).X
+                if (textWidth > newColumnWidth) then newColumnWidth = textWidth end
 
-                        loadEditor(className, propertyName)
-                    end
-                    
-                    Widget.SetCategoryVisibility(propertyCategory, true)
+                if Widget.PropertyRows[normalName] then
+                    Widget.SetRowVisibility(normalName, true)
+                else
+                    Widget.AddRow(className, propertyName, true)
+                --  rowsToAdd[#rowsToAdd + 1] = {className, propertyName, true}
+
+                    loadEditor(className, propertyName)
                 end
+
+                Widget.SetCategoryVisibility(propertyCategory, true)
             end
         end
     end
@@ -281,10 +394,46 @@ for _, extension in pairs(defaultExtensions:GetChildren()) do
     loadExtension(extension)
 end
 
+-- CenterOfMass is disabled as of 8 Jan 2020, so it's being removed for now
+APIData.Classes.BasePart.Properties.CenterOfMass = nil
+
 Widget.Init(plugin, pluginSettings, {
     APIData = APIData,
     APILib = APILib
 })
+
+-- Load Editors
+
+do
+    for _, editor in pairs(defaultEditors:GetChildren()) do
+        local compiledEditor = EditorUtilities.CompileEditor(editor)
+
+        local uniqueId = compiledEditor.EditorInfo.UniqueId
+        if (uniqueId ~= "editor.$native.fallback") then
+            local filters = compiledEditor.EditorInfo.Filters
+
+            for i = 1, #filters do
+                local filter = filters[i]
+
+                if string.match(filter, "instance:") then
+                    warn("Instance editors are not supported")
+                else
+                    if (not editors[filter]) then
+                        editors[filter] = compiledEditor
+
+                    --  print("loaded editor " .. uniqueId)
+                    else
+                        if (pluginSettings.FilterPreferences[filter] == uniqueId) then
+                            editors[filter] = compiledEditor
+
+                        --  print("loaded editor " .. uniqueId)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
 
 -- Preload Classes
 
@@ -297,11 +446,11 @@ do
 		classes = require(includes:WaitForChild("CommonClasses"))
     end
 
-    local rowsToAdd = {}
+--  local rowsToAdd = {}
     if classes then
         for className in pairs(classes) do
 			local properties = APILib:GetImmediateProperties(className)
-			
+
             for i = 1, #properties do
                 local propertyName = properties[i]
 

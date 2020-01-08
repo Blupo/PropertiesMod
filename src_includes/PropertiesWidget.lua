@@ -1,6 +1,5 @@
 local includes = script.Parent
 
-local RobloxAPI = require(includes:WaitForChild("RobloxAPI"))
 local Themer = require(includes:WaitForChild("Themer"))
 
 ---
@@ -55,7 +54,7 @@ local function isPropertyInaccessible(className, propertyName)
 end
 
 local function getEditorColumnWidth()
-    return math.max(Settings.Config.RowHeight, widget.AbsoluteSize.X - propertyNameColumnWidth)
+    return math.max(Settings.Config.EditorColumnWidth, widget.AbsoluteSize.X - propertyNameColumnWidth)
 end
 
 local function getListWidth()
@@ -129,24 +128,24 @@ local function newPropertyRow(className, propertyName)
 		rmbMenu:ShowAsync()
 		rmbMenu:Destroy()
 	end)
-	
+
 	propertyNameCell.MouseEnter:Connect(function()
 		if (isReadOnly or isInaccessible) then return end
 
 		Themer.SyncProperty(propertyNameCell, "BackgroundColor3", {Enum.StudioStyleGuideColor.TableItem, Enum.StudioStyleGuideModifier.Hover})
 	end)
-	
+
 	propertyNameCell.MouseLeave:Connect(function()
 		if (isReadOnly or isInaccessible) then return end
 
 		Themer.SyncProperty(propertyNameCell, "BackgroundColor3", Enum.StudioStyleGuideColor.TableItem)
     end)
-    
+
     propertyNameCell:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
         editorCell.Size = UDim2.new(0, getEditorColumnWidth(), 0, Settings.Config.RowHeight)
         row.Size = UDim2.new(0, getListWidth(), 0, Settings.Config.RowHeight)
     end)
-	
+
 	propertyNameLabel.Parent = propertyNameCell
 	propertyNameCell.Parent = row
 	editorCell.Parent = row
@@ -159,7 +158,7 @@ end
 
 local function createCategoryContainer(categoryName)
 	if (Widget.Categories[categoryName]) then return end
-	
+
 	local isToggled do
 		if (type(Settings.CategoryStateMemory[categoryName]) == "boolean") then
 			isToggled = Settings.CategoryStateMemory[categoryName]
@@ -167,19 +166,19 @@ local function createCategoryContainer(categoryName)
 			isToggled = true
 		end
 	end
-	
+
 	local categoryFrame = Instance.new("Frame")
 	categoryFrame.Name = categoryName
     categoryFrame.BackgroundTransparency = 1
     categoryFrame.Visible = false
-	
+
 	local header = Instance.new("Frame")
 	header.Name = "Header"
 	header.AnchorPoint = Vector2.new(0.5, 0)
 	header.Size = UDim2.new(1, 0, 0, Settings.Config.RowHeight)
 	header.Position = UDim2.new(0.5, 0, 0, 0)
 	header.BorderSizePixel = 0
-	
+
 	local headerToggle = Instance.new("ImageButton")
 	headerToggle.Name = "Toggle"
 	headerToggle.AnchorPoint = Vector2.new(0, 0.5)
@@ -187,7 +186,7 @@ local function createCategoryContainer(categoryName)
 	headerToggle.Position = UDim2.new(0, 0, 0.5, 0)
 	headerToggle.BackgroundTransparency = 1
 	headerToggle.Image = isToggled and RIGHT_ARROW_IMAGE or DOWN_ARROW_IMAGE
-	
+
 	local headerText = Instance.new("TextButton")
 	headerText.Name = "HeaderText"
 	headerText.AnchorPoint = Vector2.new(1, 0.5)
@@ -200,7 +199,7 @@ local function createCategoryContainer(categoryName)
 	headerText.TextXAlignment = Enum.TextXAlignment.Left
 	headerText.TextYAlignment = Enum.TextYAlignment.Center
 	headerText.Text = categoryName
-	
+
 	local categoryPropertiesListUI = Instance.new("Frame")
 	categoryPropertiesListUI.Name = "PropertiesList"
 	categoryPropertiesListUI.AnchorPoint = Vector2.new(0.5, 1)
@@ -214,7 +213,7 @@ local function createCategoryContainer(categoryName)
 	local function toggle()
 		isToggled = (not isToggled)
 		Settings.CategoryStateMemory[categoryName] = isToggled
-		
+
 		headerToggle.Image = isToggled and RIGHT_ARROW_IMAGE or DOWN_ARROW_IMAGE
 
 		categoryPropertiesListUI.Visible = isToggled
@@ -222,7 +221,7 @@ local function createCategoryContainer(categoryName)
 		local tableSize = categoryPropertiesListUIListLayout.AbsoluteContentSize
 		categoryPropertiesListUI.Size = isToggled and UDim2.new(0, getListWidth(), 0, tableSize.Y) or UDim2.new(0, getListWidth(), 0, 0)
 	end
-	
+
 	Themer.SyncProperty(header, "BackgroundColor3", Enum.StudioStyleGuideColor.MainBackground)
 	Themer.SyncProperty(headerToggle, "ImageColor3", Enum.StudioStyleGuideColor.ButtonText)
 	Themer.SyncProperty(headerText, "TextColor3", Enum.StudioStyleGuideColor.BrightText)
@@ -233,39 +232,39 @@ local function createCategoryContainer(categoryName)
 	headerText.MouseButton1Down:Connect(function()
 		local now = tick()
 
-		if ((now - lastClickTime) < DOUBLE_CLICK_TIME) then 
+		if ((now - lastClickTime) < DOUBLE_CLICK_TIME) then
 			toggle()
-			
+
 			lastClickTime = 0
 		else
 			lastClickTime = now
 		end
 	end)
-	
+
 	categoryPropertiesListUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		categoryFrame.Size = UDim2.new(0, getListWidth(), 0, categoryPropertiesListUI.AbsoluteSize.Y + Settings.Config.RowHeight)
 	end)
 
 	categoryPropertiesListUIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		local tableSize = categoryPropertiesListUIListLayout.AbsoluteContentSize
-		
+
 		categoryPropertiesListUI.Size = isToggled and UDim2.new(0, getListWidth(), 0, tableSize.Y) or UDim2.new(0, getListWidth(), 0, 0)
     end)
-    
+
     categoryPropertiesListUI.Size = UDim2.new(0, getListWidth(), 0, Settings.Config.RowHeight)
-	
+
 	headerToggle.Parent = header
 	headerText.Parent = header
     categoryPropertiesListUIListLayout.Parent = categoryPropertiesListUI
     header.Parent = categoryFrame
     categoryPropertiesListUI.Parent = categoryFrame
 	categoryFrame.Parent = propertiesListScrollingFrame
-	
+
 	Widget.Categories[categoryName] = {
 		UI = categoryFrame,
 		TableUI = categoryPropertiesListUI
 	}
-	
+
 	return Widget.Categories[categoryName]
 end
 
@@ -318,10 +317,8 @@ function Widget.Init(pluginObj, settings, apiLib)
 
     widget:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
         for _, propertyRow in pairs(Widget.PropertyRows) do
-            local editorCellWidth = math.max(150, widget.AbsoluteSize.X - propertyNameColumnWidth)
-
-            propertyRow:FindFirstChild("Editor").Size = UDim2.new(0, editorCellWidth, 0, Settings.Config.RowHeight)
-            propertyRow.Size = UDim2.new(0, propertyNameColumnWidth + editorCellWidth, 0, Settings.Config.RowHeight)
+            propertyRow:FindFirstChild("Editor").Size = UDim2.new(0, getEditorColumnWidth(), 0, Settings.Config.RowHeight)
+            propertyRow.Size = UDim2.new(0, getListWidth(), 0, Settings.Config.RowHeight)
         end
     end)
 
@@ -442,7 +439,7 @@ function Widget.AddRows(rows)
 			table.sort(categoryRows, function(a, b)
 				local _, propertyNameA = parsePropertyNormalName(a)
 				local _, propertyNameB = parsePropertyNormalName(b)
-				
+
 				return propertyNameA < propertyNameB
 			end)
 

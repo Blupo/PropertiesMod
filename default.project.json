@@ -1,18 +1,26 @@
 {
   "name": "PropertiesMod",
   "tree": {
-    "$path": "src",
+    "$className": "DataModel",
 
-    "includes": {
-      "$path": "src_includes",
+    "Workspace": {
+        "$className": "Workspace",
 
-      "RobloxAPI": {
-        "$path": "includes/RobloxAPI/lib"
-      },
+        "PropertiesMod": {
+            "$path": "src",
 
-      "t": {
-        "$path": "includes/t/lib"
-      }
+            "includes": {
+              "$path": "src_includes",
+          
+              "RobloxAPI": {
+                  "$path": "includes/RobloxAPI/lib"
+              },
+          
+              "t": {
+                  "$path": "includes/t/lib"
+              }
+          }
+        }
     }
   }
 }
