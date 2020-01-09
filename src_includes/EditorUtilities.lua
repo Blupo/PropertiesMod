@@ -42,4 +42,35 @@ function EditorUtils.CompileEditor(dir)
     }
 end
 
+function EditorUtils.CompileEditorsFromProject(dir)
+    local projectInfoScript = dir:FindFirstChild("project_info")
+    if (not t.instanceOf("ModuleScript")(projectInfoScript)) then return end
+
+    local projectInfo = require(projectInfoScript)
+    if (not t.array(verifyEditorInfo)(projectInfo)) then return end
+
+    local editors = {}
+    do
+        for i = 1, #projectInfo do
+            local editorInfo = projectInfo[i]
+
+            local entryPointScript = dir:FindFirstChild(editorInfo.EntryPoint)
+            if t.instanceOf("ModuleScript")(entryPointScript) then
+                local constructor = require(entryPointScript)
+
+                if t.callback(constructor) then
+                    editors[editorInfo.UniqueId] = {
+                        EditorInfo = editorInfo,
+                        Constructor = constructor,
+                    }
+                end
+            else
+                warn("could not add editor " .. editorInfo.UniqueId .. ", entry point not found")
+            end
+        end
+    end
+
+    return editors
+end
+
 return EditorUtils

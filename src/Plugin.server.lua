@@ -13,6 +13,7 @@ local root = script.Parent
 
 local includes = root:WaitForChild("includes")
 local defaultEditors = root:WaitForChild("default_editors")
+local defaultProjects = root:FindFirstChild("default_projects")
 local defaultExtensions = root:WaitForChild("default_extensions")
 
 local RobloxAPI = require(includes:WaitForChild("RobloxAPI"))
@@ -404,33 +405,44 @@ Widget.Init(plugin, pluginSettings, {
 
 -- Load Editors
 
+local function addEditor(editor)
+    local uniqueId = editor.EditorInfo.UniqueId
+    if (uniqueId == "editor.$native.fallback") then return end
+
+    local filters = editor.EditorInfo.Filters
+
+    for i = 1, #filters do
+        local filter = filters[i]
+
+        if string.match(filter, "instance:") then
+            warn("Instance editors are not supported")
+        else
+            if (not editors[filter]) then
+                editors[filter] = editor
+
+            --  print("loaded editor " .. uniqueId)
+            else
+                if (pluginSettings.FilterPreferences[filter] == uniqueId) then
+                    editors[filter] = editor
+
+                --  print("loaded editor " .. uniqueId)
+                end
+            end
+        end
+    end
+end
+
 do
     for _, editor in pairs(defaultEditors:GetChildren()) do
         local compiledEditor = EditorUtilities.CompileEditor(editor)
+        if compiledEditor then addEditor(compiledEditor) end
+    end
 
-        local uniqueId = compiledEditor.EditorInfo.UniqueId
-        if (uniqueId ~= "editor.$native.fallback") then
-            local filters = compiledEditor.EditorInfo.Filters
+    for _, project in pairs(defaultProjects:GetChildren()) do
+        local projectEditors = EditorUtilities.CompileEditorsFromProject(project)
 
-            for i = 1, #filters do
-                local filter = filters[i]
-
-                if string.match(filter, "instance:") then
-                    warn("Instance editors are not supported")
-                else
-                    if (not editors[filter]) then
-                        editors[filter] = compiledEditor
-
-                    --  print("loaded editor " .. uniqueId)
-                    else
-                        if (pluginSettings.FilterPreferences[filter] == uniqueId) then
-                            editors[filter] = compiledEditor
-
-                        --  print("loaded editor " .. uniqueId)
-                        end
-                    end
-                end
-            end
+        for _, editor in pairs(projectEditors) do
+            addEditor(editor)
         end
     end
 end
