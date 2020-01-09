@@ -12,6 +12,7 @@ return function(button, activateCallback, delta)
     button.MouseButton1Down:Connect(function()
         activated = true
 
+        activateCallback()
         delay(0.5, function()
             if activated then
                 sustained = true
@@ -27,7 +28,7 @@ return function(button, activateCallback, delta)
         actualDelta = delta
     end)
 
-    button.Activated:Connect(function()
+    button.MouseButton1Click:Connect(function()
         if activated then return end
         activateCallback()
     end)

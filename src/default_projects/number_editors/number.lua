@@ -20,14 +20,25 @@ return function(main, lib, propertyData)
     local isReadOnly = propertyData.Tags.ReadOnly
 
     local textBox, incrementUp, incrementDown = NumberEditorComponents(lib.Themer, isReadOnly)
+    textBox.TextEditable = (not isReadOnly)
 
-    if (not isReadOnly) then
+    main.PropertyValueUpdated:Connect(function(newValue)
+        textBox.Text = newValue and string.format("%g", newValue) or ""
+    end)
+
+    if isReadOnly then
+        lib.Themer.DesyncProperties(incrementUp)
+        lib.Themer.DesyncProperties(incrementDown)
+
+        incrementUp:Destroy()
+        incrementDown:Destroy()
+    else
         SustainableButton(incrementUp, function()
-            textBox.Text = tostring(tonumber(textBox.Text) + 1)
+            textBox.Text = tostring(tonumber(textBox.Text) + 0.01)
         end, 0.25)
 
         SustainableButton(incrementDown, function()
-            textBox.Text = tostring(tonumber(textBox.Text) - 1)
+            textBox.Text = tostring(tonumber(textBox.Text) - 0.01)
         end, 0.25)
 
         textBox.FocusLost:Connect(function(enterPressed)
@@ -42,13 +53,10 @@ return function(main, lib, propertyData)
         --  if tonumber(n) then main.Update(tonumber(n)) end
             textBox.Text = n
         end)
+
+        incrementUp.Parent = main.Display
+        incrementDown.Parent = main.Display
     end
 
-    main.PropertyValueUpdated:Connect(function(newValue)
-        textBox.Text = newValue and string.format("%g", newValue) or ""
-    end)
-
     textBox.Parent = main.Display
-    incrementUp.Parent = main.Display
-    incrementDown.Parent = main.Display
 end

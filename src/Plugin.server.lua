@@ -26,16 +26,23 @@ local t = require(includes:FindFirstChild("t"))
 
 local DEFAULT_SETTINGS = {
     Config = {
+        CacheDuration = 7 * 86400,
+        -- 7 days
+
         ShowInaccessibleProperties = false,
         ShowDeprecatedProperties = false,
+        ShowHiddenProperties = false,
 
         PreloadClasses = "Common",
         -- Common, All, or None,
 
-        EditorColumnWidth = 200,
+        EditorColumnWidth = 100,
         RowHeight = 26,
-
         TextSize = 14,
+    },
+
+    Cache = {
+        LastFetchTime = 0,
     },
 
     FilterPreferences = {},
@@ -63,10 +70,10 @@ local T_MAP = {
     int = "integer"
 }
 
-local API = RobloxAPI.new(true)
-local APIData = API.Data
-local APILib = API.Library
-local APIOperator = API.Operator
+local API
+local APIData
+local APILib
+local APIOperator
 
 local editors = {
     ["*"] = EditorUtilities.CompileEditor(defaultEditors:WaitForChild("fallback"))
@@ -74,7 +81,8 @@ local editors = {
 
 local cachedPluginObjects = {}
 
-local pluginSettings = plugin:GetSetting("PropertiesMod") and HttpService:JSONDecode(plugin:GetSetting("PropertiesMod")) or DEFAULT_SETTINGS
+local pluginSettings = DEFAULT_SETTINGS
+--plugin:GetSetting("PropertiesMod") and HttpService:JSONDecode(plugin:GetSetting("PropertiesMod")) or DEFAULT_SETTINGS
 
 -- SelectionChanged that doesn't spam that much
 -- https://devforum.roblox.com/t/weird-selectionchanged-behavior/22024/2
@@ -381,7 +389,38 @@ plugin.Unloading:Connect(function()
     print("Cleaned up PropertiesMod")
 end)
 
----
+--- Load API
+
+do
+    local lastFetchTime = pluginSettings.Cache.LastFetchTime
+    local cacheDuration = pluginSettings.Config.CacheDuration
+
+    local rawAPIData
+    if ((tick() - lastFetchTime) >= cacheDuration) then
+        print("[PropertiesMod] Fetching the latest API, please wait...")
+        print("[PropertiesMod] Fetching from https://raw.githubusercontent.com/CloneTrooper1019/Roblox-Client-Tracker/roblox/API-Dump.json")
+
+        local success, data = pcall(function() return HttpService:GetAsync("https://raw.githubusercontent.com/CloneTrooper1019/Roblox-Client-Tracker/roblox/API-Dump.json") end)
+        if (not success) then
+            warn("[PropertiesMod] Could not get API data, got error: " .. data)
+            return nil
+        end
+
+        rawAPIData = HttpService:JSONDecode(data)
+        pluginSettings.Cache.Data = rawAPIData
+
+        print("[PropertiesMod] Successfully loaded data")
+    else
+        rawAPIData = pluginSettings.Cache.Data
+
+        print("[PropertiesMod] Loaded cached data")
+    end
+
+    API = RobloxAPI.new(rawAPIData, true)
+    APIData = API.Data
+    APILib = API.Library
+    APIOperator = API.Operator
+end
 
 if (not pluginSettings.Config.ShowInaccessibleProperties) then
     APIData:RemoveInaccessibleMembers()
@@ -391,12 +430,22 @@ if (not pluginSettings.Config.ShowDeprecatedProperties) then
     APIData:RemoveDeprecatedMembers()
 end
 
+if (not pluginSettings.Config.ShowHiddenProperties) then
+    APIData:RemoveHiddenProperties()
+end
+
+APIData:RemoveLocalUserSecurityMembers()
+APIData:MarkNotAccessibleSecurityPropertiesAsReadOnly()
+
 for _, extension in pairs(defaultExtensions:GetChildren()) do
     loadExtension(extension)
 end
 
--- CenterOfMass is disabled as of 8 Jan 2020, so it's being removed for now
+-- BasePart/CenterOfMass is disabled, so it's being removed until it's enabled
 APIData.Classes.BasePart.Properties.CenterOfMass = nil
+
+-- Instance/RobloxLocked cannot be accessed, but isn't marked in the API as such
+APIData.Classes.Instance.Properties.RobloxLocked = nil
 
 Widget.Init(plugin, pluginSettings, {
     APIData = APIData,

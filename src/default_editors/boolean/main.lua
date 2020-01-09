@@ -36,7 +36,8 @@ return function(main, lib, propertyData)
 
         lib.Themer.SyncProperty(indicator, "BackgroundColor3", {
             Enum.StudioStyleGuideColor.CheckedFieldBackground,
-            boolValue and Enum.StudioStyleGuideModifier.Selected or Enum.StudioStyleGuideModifier.Default
+            isReadOnly and Enum.StudioStyleGuideModifier.Disabled or
+                (boolValue and Enum.StudioStyleGuideModifier.Selected or Enum.StudioStyleGuideModifier.Default)
         })
     end
 
