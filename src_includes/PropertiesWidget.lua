@@ -18,7 +18,7 @@ local SCROLLBAR_IMAGES = {
 local WIDGET_INFO = {
     WIDGET_ID = "PropertiesMod",
     WIDGET_DEFAULT_TITLE = "Properties",
-    WIDGET_PLUGINGUI_INFO = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 268, 400, 270, 250)
+    WIDGET_PLUGINGUI_INFO = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, false, 265, 400, 265, 250)
 }
 
 ---
@@ -47,14 +47,20 @@ local function parsePropertyNormalName(propertyNormalName)
     return string.match(propertyNormalName, "(.+)/(.+)")
 end
 
-local function isPropertyInaccessible(className, propertyName)
+local function isPropertyNotScriptable(className, propertyName)
     local property = APIData.Classes[className].Properties[propertyName]
 
-    return (property.Security.Read == "RobloxSecurity") or (property.Security.Read == "RobloxScriptSecurity") or (property.Tags.NotScriptable)
+    return property.Tags.NotScriptable
 end
 
 local function getEditorColumnWidth()
-    return math.max(Settings.Config.EditorColumnWidth, widget.AbsoluteSize.X - propertyNameColumnWidth)
+    local actualWidth = math.max(Settings.Config.EditorColumnWidth, widget.AbsoluteSize.X - propertyNameColumnWidth)
+
+    if (propertiesListUIListLayout.AbsoluteContentSize.Y > widget.AbsoluteSize.Y) and (propertiesListUIListLayout.AbsoluteContentSize.X <= widget.AbsoluteSize.X) then
+        return actualWidth - 18
+    else
+        return actualWidth
+    end
 end
 
 local function getListWidth()
@@ -85,8 +91,9 @@ local function newPropertyRow(className, propertyName)
 
     -- populate
 
+    local isNative = APIData.Classes[className].Properties[propertyName].Native
     local isReadOnly = APILib:IsPropertyReadOnly(className, propertyName)
-    local isInaccessible = isPropertyInaccessible(className, propertyName)
+    local isNotScriptable = isPropertyNotScriptable(className, propertyName)
 
     local propertyNameLabel = Instance.new("TextButton")
     propertyNameLabel.AnchorPoint = Vector2.new(0, 0.5)
@@ -112,13 +119,15 @@ local function newPropertyRow(className, propertyName)
         BorderColor3 = Enum.StudioStyleGuideColor.Border
     })
 
-    if isInaccessible then
+    if isNotScriptable then
         Themer.SyncProperty(propertyNameLabel, "TextColor3", Enum.StudioStyleGuideColor.ErrorText)
     else
         Themer.SyncProperty(propertyNameLabel, "TextColor3", {Enum.StudioStyleGuideColor.MainText, isReadOnly and Enum.StudioStyleGuideModifier.Disabled or Enum.StudioStyleGuideModifier.Default})
     end
 
     propertyNameLabel.MouseButton2Click:Connect(function()
+        if (not isNative) then return end
+
         local rmbMenu = plugin:CreatePluginMenu("PropertiesMod")
 
         rmbMenu:AddNewAction("ViewOnDevHub", "View on DevHub").Triggered:Connect(function()
@@ -130,13 +139,13 @@ local function newPropertyRow(className, propertyName)
     end)
 
     propertyNameCell.MouseEnter:Connect(function()
-        if (isReadOnly or isInaccessible) then return end
+        if (isReadOnly or isNotScriptable) then return end
 
         Themer.SyncProperty(propertyNameCell, "BackgroundColor3", {Enum.StudioStyleGuideColor.TableItem, Enum.StudioStyleGuideModifier.Hover})
     end)
 
     propertyNameCell.MouseLeave:Connect(function()
-        if (isReadOnly or isInaccessible) then return end
+        if (isReadOnly or isNotScriptable) then return end
 
         Themer.SyncProperty(propertyNameCell, "BackgroundColor3", Enum.StudioStyleGuideColor.TableItem)
     end)
@@ -282,7 +291,7 @@ function Widget.Init(pluginObj, settings, apiLib)
     propertiesListScrollingFrame = Instance.new("ScrollingFrame")
     propertiesListScrollingFrame.Name = "PropertiesListContainer"
     propertiesListScrollingFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    propertiesListScrollingFrame.Size = UDim2.new(1, 0, 1, -2)
+    propertiesListScrollingFrame.Size = UDim2.new(1, 0, 1, 0)
     propertiesListScrollingFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
     propertiesListScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
     propertiesListScrollingFrame.CanvasPosition = Vector2.new(0, 0)
@@ -301,7 +310,7 @@ function Widget.Init(pluginObj, settings, apiLib)
     propertiesListUIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
     propertiesListUIListLayout.SortOrder = Enum.SortOrder.Name
     propertiesListUIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-    propertiesListUIListLayout.Padding = UDim.new(0, 0)
+    propertiesListUIListLayout.Padding = UDim.new(0, 1)
 
     Themer.SyncProperties(propertiesListScrollingFrame, {
         ScrollBarImageColor3 = Enum.StudioStyleGuideColor.ScrollBar,

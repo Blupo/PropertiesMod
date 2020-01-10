@@ -1,9 +1,38 @@
-local WIDGET_GUI_INFO = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, false, false, 300, 200, 300, 200)
+local WIDGET_GUI_INFO = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, false, true, 300, 200, 300, 200)
 
-local widgetGui
+local SCROLLBAR_IMAGES = {
+    Top = "rbxassetid://590077572",
+    Middle = "rbxassetid://590077572",
+    Bottom = "rbxassetid://590077572",
+}
+
+---
+
+local widget
+local widgetTextBox
+
+local lock
+
+local changePropertyValueEvent = Instance.new("BindableEvent")
+local ChangePropertySignal = changePropertyValueEvent.Event
+
+local function openWidgetPrompt(lockName, initialValue)
+    if lock then return else lock = lockName end
+
+    widgetTextBox.Text = initialValue
+    widget.Title  = "Editing " .. lockName
+    widget.Enabled = true
+end
+
+local function resetPrompt()
+    widget.Enabled = false
+    widgetTextBox.Text = ""
+
+    lock = nil
+end
 
 local function makeWidget(main, lib)
-    widgetGui = main.CreateDockWidgetPluginGui(WIDGET_GUI_INFO)
+    widget = main.CreateDockWidgetPluginGui(WIDGET_GUI_INFO)
 
     local container = Instance.new("Frame")
     container.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -13,18 +42,40 @@ local function makeWidget(main, lib)
     container.BorderSizePixel = 1
     container.Name = "Container"
 
-    local textEditorFrame = Instance.new("Frame")
-    textEditorFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    textEditorFrame.Size = UDim2.new(1, -20, 1, -20)
-    textEditorFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    local textEditorFrame = Instance.new("ScrollingFrame")
+    textEditorFrame.AnchorPoint = Vector2.new(0.5, 0)
+    textEditorFrame.Size = UDim2.new(1, -20, 1, -46)
+    textEditorFrame.Position = UDim2.new(0.5, 0, 0, 10)
     textEditorFrame.BackgroundTransparency = 0
     textEditorFrame.BorderSizePixel = 1
+    textEditorFrame.ClipsDescendants = true
+    textEditorFrame.HorizontalScrollBarInset = Enum.ScrollBarInset.Always
+    textEditorFrame.VerticalScrollBarInset = Enum.ScrollBarInset.Always
+    textEditorFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Right
+    textEditorFrame.TopImage = SCROLLBAR_IMAGES.Top
+    textEditorFrame.MidImage = SCROLLBAR_IMAGES.Middle
+    textEditorFrame.BottomImage = SCROLLBAR_IMAGES.Bottom
+    textEditorFrame.ScrollBarThickness = 18
     textEditorFrame.Name = "TextEditorContainer"
+
+    local textBox = Instance.new("TextBox")
+    textBox.AnchorPoint = Vector2.new(0, 0)
+    textBox.Size = UDim2.new(1, 0, 0, 0)
+    textBox.Position = UDim2.new(0, 0, 0, 0)
+    textBox.BackgroundTransparency = 1
+    textBox.ClearTextOnFocus = false
+    textBox.Font = Enum.Font.SourceSans
+    textBox.TextSize = 14
+    textBox.TextXAlignment = Enum.TextXAlignment.Left
+    textBox.TextYAlignment = Enum.TextYAlignment.Top
+    textBox.TextTruncate = Enum.TextTruncate.AtEnd
+    textBox.TextWrapped = true
+    textBox.Name = "TextBox"
 
     local actionButtonsFrame = Instance.new("Frame")
     actionButtonsFrame.AnchorPoint = Vector2.new(0.5, 1)
-    actionButtonsFrame.Size = UDim2.new(1, 0, 0, 18)
-    actionButtonsFrame.Position = UDim2.new(0.5, 0, 1, 0)
+    actionButtonsFrame.Size = UDim2.new(1, -20, 0, 18)
+    actionButtonsFrame.Position = UDim2.new(0.5, 0, 1, -10)
     actionButtonsFrame.BackgroundTransparency = 1
     actionButtonsFrame.Name = "ActionButtons"
 
@@ -68,6 +119,10 @@ local function makeWidget(main, lib)
         BackgroundColor3 = Enum.StudioStyleGuideColor.MainBackground
     })
 
+    lib.Themer.SyncProperties(textBox, {
+        TextColor3 = Enum.StudioStyleGuideColor.MainText
+    })
+
     lib.Themer.SyncProperties(confirmButton, {
         TextColor3 = Enum.StudioStyleGuideColor.ButtonText,
         BorderColor3 = Enum.StudioStyleGuideColor.ButtonBorder,
@@ -86,6 +141,32 @@ local function makeWidget(main, lib)
         BackgroundColor3 = Enum.StudioStyleGuideColor.Button
     })
 
+    local function updateTextFrame()
+        local textEditorFrameSize = textEditorFrame.AbsoluteSize
+        local textBounds = textBox.TextBounds
+
+        textBox.Size = UDim2.new(0, textEditorFrameSize.X, 0, (textEditorFrameSize.Y > textBounds.Y) and textEditorFrameSize.Y or textBounds.Y)
+        textEditorFrame.CanvasSize = UDim2.new(0, textEditorFrameSize.X, 0, textBounds.Y)
+    end
+
+    textEditorFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateTextFrame)
+    textBox:GetPropertyChangedSignal("Text"):Connect(updateTextFrame)
+
+    confirmButton.MouseButton1Click:Connect(function()
+        changePropertyValueEvent:Fire(lock, textBox.Text)
+        resetPrompt()
+    end)
+
+    blankButton.MouseButton1Click:Connect(function()
+        textBox.Text = ""
+    end)
+
+    cancelButton.MouseButton1Click:Connect(resetPrompt)
+
+    widgetTextBox = textBox
+
+    textBox.Parent = textEditorFrame
+
     actionButtonsLayout.Parent = actionButtonsFrame
     confirmButton.Parent = actionButtonsFrame
     cancelButton.Parent = actionButtonsFrame
@@ -94,11 +175,11 @@ local function makeWidget(main, lib)
     textEditorFrame.Parent = container
     actionButtonsFrame.Parent = container
 
-    container.Parent = widgetGui
+    container.Parent = widget
 end
 
 return function(main, lib, propertyData)
-    if (not widgetGui) then makeWidget(main, lib) end
+    if (not widget) then makeWidget(main, lib) end
 
     local isReadOnly = propertyData.Tags.ReadOnly
 
@@ -113,11 +194,13 @@ return function(main, lib, propertyData)
     textBox.TextSize = 14
     textBox.TextXAlignment = Enum.TextXAlignment.Left
     textBox.TextYAlignment = Enum.TextYAlignment.Center
-    textBox.TextTruncate = Enum.TextTruncate.AtEnd
+--  textBox.TextTruncate = Enum.TextTruncate.AtEnd
     textBox.TextWrapped = false
     textBox.TextEditable = (not isReadOnly)
 
-    if (not isReadOnly) then
+    -- Instance.Name seems like an unnecessary place to have this enabled for
+    -- Also Lighting.TimeOfDay
+    if ((not isReadOnly) and (main.PropertyNormal ~= "Instance/Name")) then
         local openTextEditorButton = Instance.new("TextButton")
         openTextEditorButton.AnchorPoint = Vector2.new(1, 0.5)
         openTextEditorButton.Size = UDim2.new(0, 30, 1, 0)
@@ -138,7 +221,13 @@ return function(main, lib, propertyData)
         })
 
         openTextEditorButton.MouseButton1Click:Connect(function()
-            print("the widget would open here but it's not done yet")
+            openWidgetPrompt(main.PropertyNormal, main.GetPropertyValue())
+        end)
+
+        ChangePropertySignal:Connect(function(propertyName, newValue)
+            if (propertyName ~= main.PropertyNormal) then return end
+
+            main.Update(newValue)
         end)
 
         openTextEditorButton.Parent = main.Display
@@ -147,6 +236,12 @@ return function(main, lib, propertyData)
     lib.Themer.SyncProperties(textBox, {
         TextColor3 = {Enum.StudioStyleGuideColor.MainText, isReadOnly and Enum.StudioStyleGuideModifier.Disabled or Enum.StudioStyleGuideModifier.Default}
     })
+
+    textBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            main.Update(textBox.Text)
+        end
+    end)
 
     main.PropertyValueUpdated:Connect(function(newValue)
         textBox.Text = newValue or ""

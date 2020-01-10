@@ -29,7 +29,7 @@ local DEFAULT_SETTINGS = {
         CacheDuration = 7 * 86400,
         -- 7 days
 
-        ShowInaccessibleProperties = false,
+        ShowNotScriptableProperties = true,
         ShowDeprecatedProperties = false,
         ShowHiddenProperties = false,
 
@@ -88,7 +88,8 @@ local pluginSettings = DEFAULT_SETTINGS
 -- https://devforum.roblox.com/t/weird-selectionchanged-behavior/22024/2
 -- Credit to Fractality
 
-local SelectionChanged do
+local SelectionChanged
+do
     local selectionChanged = Instance.new("BindableEvent")
     local d0, d1 = true, true
 
@@ -193,7 +194,9 @@ local function loadEditor(className, propertyName)
     local normalName = Widget.GetPropertyNormalName(className, propertyName)
     local propertyData = APIData.Classes[className].Properties[propertyName]
 
---  local propertyValueChangedConnections = {}
+    if propertyData.Tags.NotScriptable then return end
+
+    local propertyValueChangedConnections = {}
     local propertyValueUpdatedEvent = Instance.new("BindableEvent")
 
     local function getHomogeneousValue()
@@ -272,7 +275,6 @@ local function loadEditor(className, propertyName)
     end
 
     local selectionChanged = SelectionChanged:Connect(function()
-    --[[
         local selection = Selection:Get()
 
         for i = 1, #propertyValueChangedConnections do
@@ -289,13 +291,13 @@ local function loadEditor(className, propertyName)
                 end)
             end
         end
-    --]]
 
         propertyValueUpdatedEvent:Fire(getHomogeneousValue())
     end)
 
     local main = {
         Display = Widget.PropertyRows[normalName]:FindFirstChild("Editor"),
+        PropertyNormal = normalName,
 
         CreateDockWidgetPluginGui = function(dockWidgetPluginGuiInfo)
             local pluginGuiName = "PropertiesMod.PluginGuis:" .. uniqueId
@@ -320,6 +322,8 @@ local function loadEditor(className, propertyName)
                 updatingMode = newUpdatingMode
             end
         end,
+
+        GetPropertyValue = getHomogeneousValue,
 
         PropertyValueUpdated = propertyValueUpdatedEvent.Event,
         _PropertyValueUpdatedEvent = propertyValueUpdatedEvent,
@@ -377,18 +381,6 @@ local function selectionChanged()
     Widget.SetPropertyNameColumnWidth(newColumnWidth + 24 + 10)
 end
 
----
-
-local selectionConnection = SelectionChanged:Connect(selectionChanged)
-
-plugin.Unloading:Connect(function()
-    selectionConnection:Disconnect()
-    Widget.Unload()
-
-    plugin:SetSetting("PropertiesMod", HttpService:JSONEncode(pluginSettings))
-    print("Cleaned up PropertiesMod")
-end)
-
 --- Load API
 
 do
@@ -397,13 +389,16 @@ do
 
     local rawAPIData
     if ((tick() - lastFetchTime) >= cacheDuration) then
+        -- wait for HttpEnabled to do something, I guess
+        wait()
+
         print("[PropertiesMod] Fetching the latest API, please wait...")
         print("[PropertiesMod] Fetching from https://raw.githubusercontent.com/CloneTrooper1019/Roblox-Client-Tracker/roblox/API-Dump.json")
 
         local success, data = pcall(function() return HttpService:GetAsync("https://raw.githubusercontent.com/CloneTrooper1019/Roblox-Client-Tracker/roblox/API-Dump.json") end)
         if (not success) then
             warn("[PropertiesMod] Could not get API data, got error: " .. data)
-            return nil
+            return
         end
 
         rawAPIData = HttpService:JSONDecode(data)
@@ -422,8 +417,8 @@ do
     APIOperator = API.Operator
 end
 
-if (not pluginSettings.Config.ShowInaccessibleProperties) then
-    APIData:RemoveInaccessibleMembers()
+if (not pluginSettings.Config.ShowNotScriptableProperties) then
+    APIData:RemoveNotScriptableProperties()
 end
 
 if (not pluginSettings.Config.ShowDeprecatedProperties) then
@@ -434,6 +429,7 @@ if (not pluginSettings.Config.ShowHiddenProperties) then
     APIData:RemoveHiddenProperties()
 end
 
+APIData:RemoveRobloxMembers()
 APIData:RemoveLocalUserSecurityMembers()
 APIData:MarkNotAccessibleSecurityPropertiesAsReadOnly()
 
@@ -525,5 +521,15 @@ do
 end
 
 -- init
+
+local selectionConnection = SelectionChanged:Connect(selectionChanged)
+
+plugin.Unloading:Connect(function()
+    selectionConnection:Disconnect()
+    Widget.Unload()
+
+    plugin:SetSetting("PropertiesMod", HttpService:JSONEncode(pluginSettings))
+    print("Cleaned up PropertiesMod")
+end)
 
 selectionChanged()
