@@ -4,6 +4,6 @@ return {
     Description = "The boolean editor included with PropertiesMod",
     Attribution = "",
 
-    Filters = {"primitive:boolean"},
+    Filters = {"Primitive:bool"},
     EntryPoint = "main",
 }

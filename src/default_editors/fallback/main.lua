@@ -1,4 +1,4 @@
-return function(main, lib, propertyData)
+return function(main, lib)
     local textLabel = Instance.new("TextLabel")
     textLabel.AnchorPoint = Vector2.new(1, 0.5)
     textLabel.Size = UDim2.new(1, -8, 1, 0)

@@ -32,7 +32,7 @@ local function resetPrompt()
 end
 
 local function makeWidget(main, lib)
-    widget = main.CreateDockWidgetPluginGui(WIDGET_GUI_INFO)
+    widget = main.CreateDockWidgetPluginGui("Editor", WIDGET_GUI_INFO)
 
     local container = Instance.new("Frame")
     container.AnchorPoint = Vector2.new(0.5, 0.5)

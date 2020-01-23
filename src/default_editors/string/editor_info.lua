@@ -4,6 +4,6 @@ return {
     Description = "The string editor included with PropertiesMod",
     Attribution = "",
 
-    Filters = {"primitive:string"},
+    Filters = {"Primitive:string"},
     EntryPoint = "main",
 }

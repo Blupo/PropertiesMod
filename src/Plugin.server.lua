@@ -45,21 +45,13 @@ local DEFAULT_SETTINGS = {
         LastFetchTime = 0,
     },
 
-    FilterPreferences = {},
+    EditorPreferences = {},
     PropertyCategoryOverrides = {},
     CategoryStateMemory = {},
 }
 
 local EDITOR_LIB = {
     Themer = Themer,
-}
-
-local PRIMITIVES_MAP = {
-    bool = "boolean",
-    float = "number",
-    double = "number",
-    int64 = "integer",
-    int = "integer",
 }
 
 local T_MAP = {
@@ -75,8 +67,8 @@ local APIData
 local APILib
 local APIOperator
 
-local editors = {
-    ["*"] = EditorUtilities.CompileEditor(defaultEditors:WaitForChild("fallback"))
+local loadedEditors = {
+    ["*"] = EditorUtilities.ConstructEditors(defaultEditors:WaitForChild("fallback"))[1],
 }
 
 local cachedPluginObjects = {}
@@ -138,30 +130,73 @@ local function loadExtension(module)
     APIOperator:ExtendCustomBehaviours(behaviourExtensions or {})
 end
 
-local function getPropertyType(className, propertyName)
+local function getEditorsForFilter(filter)
+    local matchingEditors = {}
+
+    for editorName, editor in pairs(loadedEditors) do
+        if editor.Filters[filter] then
+            matchingEditors[#matchingEditors + 1] = editorName
+        end
+    end
+
+    return matchingEditors
+end
+
+--[[
+
+    Determines an editor to be used for a property
+
+    @param string The class name
+    @param string The property name
+    @return string The name of the editor
+
+--]]
+local function getEditorForProperty(className, propertyName)
+    local matchingEditors
+
     local propertyData = APIData.Classes[className].Properties[propertyName]
     local propertyValueType = propertyData.ValueType
 
     local category = propertyValueType.Category
     local name = propertyValueType.Name
 
-    if (category == "Primitive") then
-        local primitiveNormalName = PRIMITIVES_MAP[name] and PRIMITIVES_MAP[name] or name
+    -- Property-specific editor > Property data-type editor > *
 
-        return "primitive:" .. primitiveNormalName
-    elseif (category == "DataType") then
-        return "roblox:" .. name
-    elseif (category == "Enum") then
-        return "enum"
+    -- 1. Get editors for this specific property
+    local propertyNameFilter = "Property:" .. Widget.GetPropertyNormalName(className, propertyName)
+    matchingEditors = getEditorsForFilter(propertyNameFilter)
+
+    local editorPreference = pluginSettings.EditorPreferences[propertyNameFilter]
+    if (#matchingEditors == 1) then
+        return matchingEditors[1]
+    elseif (#matchingEditors > 1) then
+        return matchingEditors[1]
+
+        -- for now, just return the first item
+        -- in the future, preferences should be incorporated
     end
 
-    return "*"
-end
+    -- 2. Get editors for the property's data type
+    local propertyTypeFilter
+    if (category == "Primitive") then
+        if ((name ~= "int") and (name ~= "int64")) then
+            propertyTypeFilter = category .. ":" .. name
+        else
+            propertyTypeFilter = "Primitive:int"
+        end
+    elseif ((category == "DataType") or (category == "Enum")) then
+        propertyTypeFilter = category .. ":" .. name
+    end
 
-local function getEditor(className, propertyName)
-    return editors["property:" .. Widget.GetPropertyNormalName(className, propertyName)] or
-        editors[getPropertyType(className, propertyName)] or
-        editors["*"]
+    matchingEditors = getEditorsForFilter(propertyTypeFilter)
+    if (#matchingEditors == 1) then
+        return matchingEditors[1]
+    elseif (#matchingEditors > 1) then
+        return matchingEditors[1]
+    end
+
+    -- 3. Use the fallback editor
+    return "*"
 end
 
 local function getSafeSelection()
@@ -187,10 +222,11 @@ local function getSafeSelection()
 end
 
 local function loadEditor(className, propertyName)
-    local editor = getEditor(className, propertyName)
-    if (not editor) then return end
+    local editorId = getEditorForProperty(className, propertyName)
+    if (not editorId) then return end
 
-    local uniqueId = editor.EditorInfo.UniqueId
+    local editor = loadedEditors[editorId]
+    local uniqueId = editor.UniqueId
     local normalName = Widget.GetPropertyNormalName(className, propertyName)
     local propertyData = APIData.Classes[className].Properties[propertyName]
 
@@ -267,7 +303,7 @@ local function loadEditor(className, propertyName)
         elseif (category == "DataType") then
             setSelectionProperty = t.wrap(
                 setSelectionPropertyCallback,
-                (name ~= "Content") and t[name] or t.string
+                function(value) return typeof(value) == ((name ~= "Content") and name or "string") end
             )
         elseif (category == "Enum") then
             setSelectionProperty = t.wrap(setSelectionPropertyCallback, t.enum(Enum[name]))
@@ -299,8 +335,8 @@ local function loadEditor(className, propertyName)
         Display = Widget.PropertyRows[normalName]:FindFirstChild("Editor"),
         PropertyNormal = normalName,
 
-        CreateDockWidgetPluginGui = function(dockWidgetPluginGuiInfo)
-            local pluginGuiName = "PropertiesMod.PluginGuis:" .. uniqueId
+        CreateDockWidgetPluginGui = function(pluginGuiId, dockWidgetPluginGuiInfo)
+            local pluginGuiName = "PropertiesMod.PluginGuis:" .. uniqueId .. ":" .. pluginGuiId
 
             local cachedPluginGui = cachedPluginObjects[pluginGuiName]
 
@@ -313,6 +349,14 @@ local function loadEditor(className, propertyName)
         end,
         CreatePluginAction = function(...) return plugin:CreatePluginAction(...) end,
         CreatePluginMenu = function(...) return plugin:CreatePluginMenu(...) end,
+
+        GetSetting = function(settingName)
+            return plugin:GetSetting("PropertiesMod.EditorSettings:"  .. uniqueId .. ":" .. settingName)
+        end,
+
+        SetSetting = function(settingName, newValue)
+            plugin:SetSetting("PropertiesMod.EditorSettings:"  .. uniqueId .. ":" .. settingName, newValue)
+        end,
 
         Update = setSelectionProperty,
 
@@ -451,10 +495,16 @@ Widget.Init(plugin, pluginSettings, {
 -- Load Editors
 
 local function addEditor(editor)
-    local uniqueId = editor.EditorInfo.UniqueId
+    local uniqueId = editor.UniqueId
+    if (uniqueId == "fallback") then return end
+
+    loadedEditors[uniqueId] = editor
+
+    --[[
+    local uniqueId = editor.UniqueId
     if (uniqueId == "editor.$native.fallback") then return end
 
-    local filters = editor.EditorInfo.Filters
+    local filters = editor.Filters
 
     for i = 1, #filters do
         local filter = filters[i]
@@ -462,31 +512,32 @@ local function addEditor(editor)
         if string.match(filter, "instance:") then
             warn("Instance editors are not supported")
         else
-            if (not editors[filter]) then
-                editors[filter] = editor
+            if (not loadedEditors[filter]) then
+                loadedEditors[filter] = editor
 
             --  print("loaded editor " .. uniqueId)
             else
                 if (pluginSettings.FilterPreferences[filter] == uniqueId) then
-                    editors[filter] = editor
+                    loadedEditors[filter] = editor
 
                 --  print("loaded editor " .. uniqueId)
                 end
             end
         end
     end
+    --]]
 end
 
 do
-    for _, editor in pairs(defaultEditors:GetChildren()) do
-        local compiledEditor = EditorUtilities.CompileEditor(editor)
-        if compiledEditor then addEditor(compiledEditor) end
+    for _, editorFolder in pairs(defaultEditors:GetChildren()) do
+        local editors = EditorUtilities.ConstructEditors(editorFolder)
+        addEditor(editors[1])
     end
 
-    for _, project in pairs(defaultProjects:GetChildren()) do
-        local projectEditors = EditorUtilities.CompileEditorsFromProject(project)
+    for _, projectFolder in pairs(defaultProjects:GetChildren()) do
+        local editors = EditorUtilities.ConstructEditors(projectFolder)
 
-        for _, editor in pairs(projectEditors) do
+        for _, editor in pairs(editors) do
             addEditor(editor)
         end
     end

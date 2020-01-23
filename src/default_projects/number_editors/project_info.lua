@@ -5,7 +5,7 @@ return {
         Description = "The number (non-integer) editor included with PropertiesMod",
         Attribution = "",
 
-        Filters = {"primitive:number"},
+        Filters = {"Primitive:double", "Primitive:float"},
         EntryPoint = "number",
     },
 
@@ -15,7 +15,7 @@ return {
         Description = "The integer editor included with PropertiesMod",
         Attribution = "",
 
-        Filters = {"primitive:integer"},
+        Filters = {"Primitive:int"},
         EntryPoint = "integer",
     }
 }
