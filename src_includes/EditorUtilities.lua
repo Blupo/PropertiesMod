@@ -232,4 +232,17 @@ EditorUtils.ConstructEditors = t.wrap(function(base)
     --]]
 end, t.union(interfaces.EditorFolder, interfaces.EditorProjectFolder, interfaces.EditorScript))
 
+do
+    -- populate Special:Enum
+    -- should this be done with the API data instead?
+    SPECIAL_FILTERS["Special:Enum"] = {}
+
+    local enumList = SPECIAL_FILTERS["Special:Enum"]
+    local enums = Enum:GetEnums()
+
+    for _, enum in ipairs(enums) do
+        enumList[#enumList + 1] = "Enum:" .. tostring(enum)
+    end
+end
+
 return EditorUtils

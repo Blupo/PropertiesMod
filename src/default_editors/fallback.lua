@@ -1,4 +1,4 @@
-return function(main, lib)
+local function construct(main, lib)
     local textLabel = Instance.new("TextLabel")
     textLabel.AnchorPoint = Vector2.new(1, 0.5)
     textLabel.Size = UDim2.new(1, -8, 1, 0)
@@ -22,3 +22,13 @@ return function(main, lib)
 
     textLabel.Parent = main.Display
 end
+
+return {
+    UniqueId = "fallback",
+    Name = "Fallback Viewer",
+    Description = "A fallback viewer for any properties that do not have an appropriate editor",
+    Attribution = "",
+
+    Filters = {"*"},
+    Constructor = construct,
+}

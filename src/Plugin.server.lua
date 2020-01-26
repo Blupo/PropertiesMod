@@ -13,7 +13,6 @@ local root = script.Parent
 
 local includes = root:WaitForChild("includes")
 local defaultEditors = root:WaitForChild("default_editors")
-local defaultProjects = root:FindFirstChild("default_projects")
 local defaultExtensions = root:WaitForChild("default_extensions")
 
 local RobloxAPI = require(includes:WaitForChild("RobloxAPI"))
@@ -36,7 +35,7 @@ local DEFAULT_SETTINGS = {
         PreloadClasses = "Common",
         -- Common, All, or None,
 
-        EditorColumnWidth = 100,
+        EditorColumnWidth = 110,
         RowHeight = 26,
         TextSize = 14,
     },
@@ -321,7 +320,7 @@ local function loadEditor(className, propertyName)
         for i = 1, #selection do
             local obj = selection[i]
 
-            if obj:IsA(className) then
+            if (obj:IsA(className) and propertyData.Native) then
                 propertyValueChangedConnections[#propertyValueChangedConnections + 1] = obj:GetPropertyChangedSignal(propertyName):Connect(function()
                     propertyValueUpdatedEvent:Fire(getHomogeneousValue())
                 end)
@@ -356,6 +355,10 @@ local function loadEditor(className, propertyName)
 
         SetSetting = function(settingName, newValue)
             plugin:SetSetting("PropertiesMod.EditorSettings:"  .. uniqueId .. ":" .. settingName, newValue)
+        end,
+
+        GetConfigSetting = function(settingName)
+            return pluginSettings.Config[settingName]
         end,
 
         Update = setSelectionProperty,
@@ -498,6 +501,8 @@ local function addEditor(editor)
     local uniqueId = editor.UniqueId
     if (uniqueId == "fallback") then return end
 
+    -- todo: check stuff here
+
     loadedEditors[uniqueId] = editor
 
     --[[
@@ -529,13 +534,8 @@ local function addEditor(editor)
 end
 
 do
-    for _, editorFolder in pairs(defaultEditors:GetChildren()) do
-        local editors = EditorUtilities.ConstructEditors(editorFolder)
-        addEditor(editors[1])
-    end
-
-    for _, projectFolder in pairs(defaultProjects:GetChildren()) do
-        local editors = EditorUtilities.ConstructEditors(projectFolder)
+    for _, editorBase in pairs(defaultEditors:GetChildren()) do
+        local editors = EditorUtilities.ConstructEditors(editorBase)
 
         for _, editor in pairs(editors) do
             addEditor(editor)

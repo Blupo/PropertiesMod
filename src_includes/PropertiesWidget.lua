@@ -1,3 +1,5 @@
+local ContentProvider = game:GetService("ContentProvider")
+
 local includes = script.Parent
 
 local Themer = require(includes:WaitForChild("Themer"))
@@ -481,5 +483,13 @@ function Widget.ResetScrollPosition()
 
     propertiesListScrollingFrame.CanvasPosition = Vector2.new(0, 0)
 end
+
+ContentProvider:PreloadAsync({
+    RIGHT_ARROW_IMAGE,
+    DOWN_ARROW_IMAGE,
+    SCROLLBAR_IMAGES.Top,
+    SCROLLBAR_IMAGES.Middle,
+    SCROLLBAR_IMAGES.Bottom,
+})
 
 return Widget
